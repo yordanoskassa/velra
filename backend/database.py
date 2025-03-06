@@ -37,4 +37,11 @@ def get_user_collection():
     if db is None:
         logger.warning("Database connection not initialized. Returning None for user collection.")
         return None
-    return db.users 
+    return db.users
+
+def get_headlines_collection():
+    """Return headlines collection"""
+    if db is None:
+        logger.warning("Database connection not initialized. Returning None for headlines collection.")
+        return None
+    return db.headlines 

@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     ALPHAVANTAGE_API_KEY: Optional[str] = None
     FMP_API_KEY: Optional[str] = None
     NEWS_API_KEY: Optional[str] = None
+    RAPIDAPI_KEY: Optional[str] = None
+    RAPIDAPI_HOST: Optional[str] = "real-time-news-data.p.rapidapi.com"
 
     class Config:
         env_file = ".env"

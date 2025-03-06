@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta, timezone
 import random
@@ -12,7 +12,9 @@ from pathlib import Path
 import asyncio
 from tenacity import retry, stop_after_attempt, wait_exponential
 from fastapi.middleware.cors import CORSMiddleware
-from models import Article
+from models import Article, RapidAPIHeadline
+from database import get_headlines_collection
+from config import settings
 
 # Load environment variables and configure Gemini
 load_dotenv()
@@ -150,41 +152,171 @@ async def fetch_news_with_retry(client, params):
     )
 
 @news_router.get("/api/news")
-async def get_news():
-    """Fetch financial news with Gemini analysis"""
-    async with httpx.AsyncClient() as client:
-        try:
-            # Get news from NewsAPI
-            news_params = {
-                "apiKey": news_api_key,
+async def get_news(analyze: bool = False):
+    """Fetch financial news with optional Gemini analysis"""
+    try:
+        # Get headlines from database instead of NewsAPI
+        headlines_collection = get_headlines_collection()
+        if headlines_collection is None:
+            raise HTTPException(status_code=500, detail="Database connection not available")
+        
+        # Get headlines, sorted by published date (newest first)
+        cursor = headlines_collection.find({}).sort("published_datetime_utc", -1).limit(10)
+        headlines = await cursor.to_list(length=10)
+        
+        # Convert ObjectId to string for JSON serialization
+        for headline in headlines:
+            headline["_id"] = str(headline["_id"])
+        
+        # Transform the data to match the format expected by the frontend
+        articles = []
+        for headline in headlines:
+            article = {
+                "id": headline["_id"],
+                "title": headline["title"],
+                "url": headline["link"],
+                "urlToImage": headline["photo_url"] or headline["thumbnail_url"],
+                "publishedAt": headline["published_datetime_utc"],
+                "content": headline["snippet"],
+                "source": {
+                    "name": headline["source_name"] or "News Source"
+                },
+                "author": ", ".join(headline["authors"]) if isinstance(headline["authors"], list) else headline["authors"],
                 "category": "business",
-                "country": "us",
-                "pageSize": 10
+                "sentiment": "neutral"  # Default sentiment
             }
             
-            response = await fetch_news_with_retry(client, news_params)
-            response.raise_for_status()
-            news_data = response.json()
+            # Add Gemini analysis only if requested
+            if analyze and article.get("content"):
+                try:
+                    article_obj = Article(
+                        title=article["title"],
+                        content=article["content"] + " " * (100 - len(article["content"])) if len(article["content"]) < 100 else article["content"],
+                        url=article["url"],
+                        publishedAt=article["publishedAt"],
+                        source=article["source"]["name"]
+                    )
+                    article["analysis"] = await generate_gemini_insights(article_obj)
+                except Exception as e:
+                    print(f"Error analyzing article '{article['title']}': {str(e)}")
+                    article["analysis"] = {
+                        "error": "Analysis failed",
+                        "details": str(e)
+                    }
+            
+            articles.append(article)
+        
+        # Return in the format expected by the frontend
+        return {"articles": articles, "status": "ok", "totalResults": len(articles)}
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching news: {str(e)}"
+        )
 
-            # Add Gemini analysis to articles with error handling
-            articles = news_data.get("articles", [])
-            for article in articles:
-                if article.get("content"):
-                    try:
-                        article["analysis"] = await generate_gemini_insights(article)
-                    except Exception as e:
-                        print(f"Error analyzing article '{article['title']}': {str(e)}")
-                        article["analysis"] = {
-                            "error": "Analysis failed",
-                            "details": str(e)
-                        }
-            # Remove articles without content before returning
-            news_data["articles"] = [a for a in articles if a.get("content")]
-            
-            return news_data
-            
-        except httpx.HTTPStatusError as e:
-            raise HTTPException(
-                status_code=e.response.status_code,
-                detail="News API error: " + str(e)
-            )
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+async def fetch_rapidapi_headlines():
+    """Fetch headlines from RapidAPI Real-Time News Data API"""
+    url = "https://real-time-news-data.p.rapidapi.com/top-headlines"
+    
+    querystring = {
+        "limit": "50",
+        "country": "US",
+        "lang": "en"
+    }
+    
+    headers = {
+        "x-rapidapi-host": settings.RAPIDAPI_HOST,
+        "x-rapidapi-key": settings.RAPIDAPI_KEY
+    }
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, headers=headers, params=querystring, timeout=30.0)
+        response.raise_for_status()
+        return response.json()
+
+@news_router.post("/api/fetch-rapidapi-headlines")
+async def fetch_and_save_rapidapi_headlines(background_tasks: BackgroundTasks):
+    """Fetch headlines from RapidAPI and save to database"""
+    # Run the task in the background
+    background_tasks.add_task(_fetch_and_save_headlines)
+    return {"message": "Headlines fetch started in background"}
+
+async def _fetch_and_save_headlines():
+    """Background task to fetch and save headlines"""
+    try:
+        # Fetch headlines from RapidAPI
+        headlines_data = await fetch_rapidapi_headlines()
+        
+        if headlines_data.get("status") != "OK" or "data" not in headlines_data:
+            print(f"Error fetching headlines: {headlines_data}")
+            return
+        
+        # Get headlines collection
+        headlines_collection = get_headlines_collection()
+        if headlines_collection is None:
+            print("Headlines collection not available")
+            return
+        
+        # Process and save headlines
+        headlines = headlines_data.get("data", [])
+        saved_count = 0
+        
+        for headline in headlines[:50]:  # Limit to 50 headlines
+            try:
+                # Create headline object with proper data handling
+                headline_dict = {
+                    "title": headline.get("title", ""),
+                    "link": headline.get("link", ""),
+                    "snippet": headline.get("snippet"),
+                    "photo_url": headline.get("photo_url"),
+                    "thumbnail_url": headline.get("thumbnail_url"),
+                    "published_datetime_utc": headline.get("published_datetime_utc"),
+                    "authors": headline.get("authors", []),
+                    "source_url": headline.get("source_url"),
+                    "source_name": headline.get("source_name"),
+                    "source_logo_url": headline.get("source_logo_url"),
+                    "source_favicon_url": headline.get("source_favicon_url"),
+                    "source_publication_id": headline.get("source_publication_id"),
+                    "related_topics": headline.get("related_topics", []),
+                    "sub_articles": headline.get("sub_articles", []),
+                    "story_id": headline.get("story_id"),
+                    "fetched_at": datetime.utcnow()
+                }
+                
+                # Check if headline already exists (by link)
+                existing = await headlines_collection.find_one({"link": headline_dict["link"]})
+                if not existing:
+                    # Insert new headline
+                    await headlines_collection.insert_one(headline_dict)
+                    saved_count += 1
+            except Exception as e:
+                print(f"Error processing headline: {str(e)}")
+                continue
+        
+        print(f"Saved {saved_count} new headlines to database")
+        
+    except Exception as e:
+        print(f"Error in background task: {str(e)}")
+
+@news_router.get("/api/rapidapi-headlines")
+async def get_rapidapi_headlines(limit: int = 20, skip: int = 0):
+    """Get headlines from database"""
+    try:
+        headlines_collection = get_headlines_collection()
+        if headlines_collection is None:
+            raise HTTPException(status_code=500, detail="Database connection not available")
+        
+        # Get headlines, sorted by published date (newest first)
+        cursor = headlines_collection.find({}).sort("published_datetime_utc", -1).skip(skip).limit(limit)
+        headlines = await cursor.to_list(length=limit)
+        
+        # Convert ObjectId to string for JSON serialization
+        for headline in headlines:
+            headline["_id"] = str(headline["_id"])
+        
+        return {"headlines": headlines, "count": len(headlines)}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching headlines: {str(e)}")

@@ -7,6 +7,7 @@ import {
   Alert,
   ActivityIndicator,
   Image,
+  Linking,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
@@ -143,21 +144,7 @@ const ProfileScreen = ({ navigation }) => {
         </View>
 
         <View style={styles.actionsContainer}>
-          <TouchableOpacity
-            style={styles.logoutButton}
-            onPress={handleLogout}
-          >
-            <Ionicons name="log-out-outline" size={20} color="#FFFFFF" />
-            <Text style={styles.buttonText}>Logout</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.deleteButton}
-            onPress={handleDeleteAccount}
-          >
-            <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
-            <Text style={styles.buttonText}>Delete Account</Text>
-          </TouchableOpacity>
+          {/* Remove all the settings options from here */}
         </View>
       </Motion.View>
 
@@ -178,6 +165,14 @@ const ProfileScreen = ({ navigation }) => {
           All content in this app is for informational purposes only and should not be considered as financial advice.
         </Text>
       </Motion.View>
+
+      <TouchableOpacity
+        style={styles.settingsButton}
+        onPress={() => navigation.navigate('Settings')}
+      >
+        <Ionicons name="settings-outline" size={20} color="#FFFFFF" />
+        <Text style={styles.buttonText}>Settings</Text>
+      </TouchableOpacity>
     </View>
   );
 };
@@ -285,6 +280,38 @@ const styles = StyleSheet.create({
     color: '#999999',
     fontSize: 12,
     textAlign: 'center',
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 10,
+  },
+  legalButton: {
+    flexDirection: 'row',
+    backgroundColor: '#333333',
+    borderRadius: 10,
+    padding: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 15,
+  },
+  helpButton: {
+    flexDirection: 'row',
+    backgroundColor: '#333333',
+    borderRadius: 10,
+    padding: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingsButton: {
+    flexDirection: 'row',
+    backgroundColor: '#333333',
+    borderRadius: 10,
+    padding: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 15,
   },
 });
 

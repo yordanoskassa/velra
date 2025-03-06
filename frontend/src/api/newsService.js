@@ -44,7 +44,7 @@ const apiClient = axios.create({
 // Get all news headlines
 export const getNewsHeadlines = async () => {
   try {
-    const response = await apiClient.get('/api/news');
+    const response = await apiClient.get('/news/api/news');
     console.log('API Response:', response.data);
     
     // Validate response structure
@@ -106,7 +106,7 @@ export const getMarketInsights = async (article) => {
     }
     
     const response = await apiClient.post(
-      `/api/market-insights/article`,
+      `/news/api/market-insights/article`,
       article,
       {
         timeout: 15000,

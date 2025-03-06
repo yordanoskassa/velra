@@ -17,6 +17,9 @@ import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import ArticleDetailsScreen from './src/screens/ArticleDetailsScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import SettingsScreen from './src/screens/SettingsScreen';
+import TermsOfService from './src/screens/TermsOfService';
+import PrivacyPolicy from './src/screens/PrivacyPolicy';
 
 // Import theme and context
 import theme from './src/theme';
@@ -78,6 +81,9 @@ function AppStack() {
         }}
       />
       <Stack.Screen name="Profile" component={ProfileScreen} />
+      <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="TermsOfService" component={TermsOfService} />
+      <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicy} />
     </Stack.Navigator>
   );
 }

@@ -1,5 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List
+from typing import Optional, List, Dict, Any, Union
+from datetime import datetime
 
 class UserBase(BaseModel):
     email: EmailStr
@@ -41,3 +42,21 @@ class Article(BaseModel):
     url: Optional[str] = None
     publishedAt: Optional[str] = None
     source: Optional[str] = None
+
+class RapidAPIHeadline(BaseModel):
+    title: str
+    link: str
+    snippet: Optional[str] = None
+    photo_url: Optional[str] = None
+    thumbnail_url: Optional[str] = None
+    published_datetime_utc: Optional[str] = None
+    authors: Optional[List[Union[str, Dict[str, Any]]]] = None
+    source_url: Optional[str] = None
+    source_name: Optional[str] = None
+    source_logo_url: Optional[str] = None
+    source_favicon_url: Optional[str] = None
+    source_publication_id: Optional[str] = None
+    related_topics: Optional[List[Dict[str, Any]]] = None
+    sub_articles: Optional[List[Dict[str, Any]]] = None
+    story_id: Optional[str] = None
+    fetched_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
