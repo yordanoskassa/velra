@@ -1,2 +1,10 @@
 /.DS_Store
 /README.md
+/frontend/node_modules
+/frontend/build
+/frontend/dist
+/frontend/coverage
+.env
+/backend/venv
+/backend/env
+/backend/env.local
