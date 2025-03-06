@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, FlatList, View, ActivityIndicator, RefreshControl, Linking, Animated, Easing } from 'react-native';
+import { StyleSheet, FlatList, View, ActivityIndicator, RefreshControl, Linking, Animated, Easing, TouchableOpacity } from 'react-native';
 import { Appbar, Text, useTheme } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../context/AuthContext';
 import NewsCard from '../components/NewsCard';
 import { getNewsHeadlines } from '../api/newsService';
 
@@ -71,6 +73,7 @@ const LoadingSpinner = () => {
 const NewsScreen = ({ navigation }) => {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -158,8 +161,20 @@ const NewsScreen = ({ navigation }) => {
           }
         ]}
       >
-        <Text style={styles.headlineText}>HEADLINE</Text>
-        <Text style={styles.decoderText}>DECODER</Text>
+        <View style={styles.headerLeft}>
+          <Text style={styles.headlineText}>HEADLINE</Text>
+          <Text style={styles.decoderText}>DECODER</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.profileButton}
+          onPress={() => navigation.navigate('Profile')}
+        >
+          <View style={styles.avatarContainer}>
+            <Text style={styles.avatarText}>
+              {user?.name?.charAt(0) || user?.email?.charAt(0) || '?'}
+            </Text>
+          </View>
+        </TouchableOpacity>
       </Animated.View>
 
       {loading && !refreshing ? (
@@ -207,8 +222,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  headerLeft: {
+    flexDirection: 'row',
     alignItems: 'baseline',
-    justifyContent: 'center',
   },
   headlineText: {
     fontFamily: 'Times New Roman',
@@ -222,6 +241,22 @@ const styles = StyleSheet.create({
     color: '#666666',
     letterSpacing: 2,
     marginLeft: 8,
+  },
+  profileButton: {
+    padding: 5,
+  },
+  avatarContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#333333',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
   },
   subtitle: {
     fontSize: 16,

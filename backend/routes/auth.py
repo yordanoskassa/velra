@@ -377,3 +377,113 @@ async def reset_password(reset_data: PasswordReset):
 async def read_users_me(current_user: UserInDB = Depends(get_current_user)):
     """Get current user information"""
     return current_user 
+
+
+@auth_router.post("/logout")
+async def logout(request: Request):
+    """Logout user by invalidating their token"""
+    # Get the authorization header
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No valid authentication token found"
+        )
+    
+    token = auth_header.split(' ')[1]
+    
+    try:
+        # Decode token to get user info
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        email = payload.get("sub")
+        
+        if email is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate token"
+            )
+            
+        # Add token to blacklist in database
+        users = get_user_collection()
+        await users.update_one(
+            {"email": email},
+            {"$push": {"invalidated_tokens": {
+                "token": token,
+                "invalidated_at": datetime.utcnow()
+            }}}
+        )
+        
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate token"
+        )
+    # In a real application, you would invalidate the token here
+    # For now, we'll just return a success message
+    return {"message": "Logged out successfully"}
+
+
+@auth_router.delete("/delete-account")
+async def delete_account(request: Request):
+    """Delete user account"""
+    try:
+        # Get the authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="No valid authentication token found"
+            )
+        
+        token = auth_header.split(' ')[1]
+        
+        try:
+            # Decode token to get user info
+            payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+            email = payload.get("sub")
+            
+            if email is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Could not validate token"
+                )
+            
+            # Check if user exists
+            users = get_user_collection()
+            user = await users.find_one({"email": email})
+            
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found"
+                )
+            
+            # Delete user from database
+            result = await users.delete_one({"email": email})
+            
+            if result.deleted_count == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found or already deleted"
+                )
+            
+            print(f"Successfully deleted account for: {email}")
+            return {"message": "Account deleted successfully"}
+            
+        except JWTError as jwt_error:
+            print(f"JWT error: {jwt_error}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+    
+    except HTTPException as http_ex:
+        # Re-raise HTTP exceptions
+        raise http_ex
+    except Exception as e:
+        print(f"Error deleting account: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete account: {str(e)}"
+        )
+    

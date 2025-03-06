@@ -340,13 +340,14 @@ const RegisterScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a237e',
+    backgroundColor: '#000000',
   },
   scrollContainer: {
     flexGrow: 1,
     padding: 20,
   },
   backButtonContainer: {
+    alignItems: 'flex-start',
     marginBottom: 20,
   },
   backButton: {
@@ -361,12 +362,12 @@ const styles = StyleSheet.create({
   headerText: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#4fc3f7',
+    color: '#FFFFFF',
     marginBottom: 8,
   },
   subHeaderText: {
     fontSize: 16,
-    color: '#ffffff',
+    color: '#CCCCCC',
     opacity: 0.8,
   },
   inputContainer: {
@@ -377,12 +378,12 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 15,
     fontSize: 16,
-    color: '#ffffff',
+    color: '#FFFFFF',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   errorText: {
-    color: '#ff5252',
+    color: '#FFFFFF',
     marginTop: 5,
     fontSize: 14,
   },
@@ -390,7 +391,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   button: {
-    backgroundColor: '#4fc3f7',
+    backgroundColor: '#FFFFFF',
     borderRadius: 10,
     padding: 15,
     alignItems: 'center',
@@ -409,11 +410,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loginText: {
-    color: '#ffffff',
+    color: '#CCCCCC',
     fontSize: 14,
   },
   loginLink: {
-    color: '#4fc3f7',
+    color: '#FFFFFF',
     fontWeight: 'bold',
   },
 });

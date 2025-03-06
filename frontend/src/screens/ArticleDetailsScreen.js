@@ -35,6 +35,19 @@ const ArticleDetailsScreen = ({ route, navigation }) => {
         // Send the properly formatted article object to the backend
         const response = await getMarketInsights(articleData);
         
+        // Helper function to ensure description is a string
+        const ensureString = (value) => {
+          if (typeof value === 'string') {
+            return value;
+          } else if (typeof value === 'object' && value !== null) {
+            return Object.entries(value)
+              .map(([key, val]) => `${key}: ${val}`)
+              .join('\n\n');
+          } else {
+            return 'No description available';
+          }
+        };
+
         // Transform the response data into the format expected by InsightCard
         if (response && response.key_points && Array.isArray(response.key_points)) {
           // Create three insight cards from the key points
@@ -45,7 +58,7 @@ const ArticleDetailsScreen = ({ route, navigation }) => {
             
             return {
               title: `Key Insight ${index + 1}`,
-              description: point,
+              description: ensureString(point),
               impact_level: impactLevel,
               confidence: response.confidence_score || 75,
               affected_assets: []

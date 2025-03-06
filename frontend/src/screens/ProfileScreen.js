@@ -11,9 +11,24 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { Motion } from '@legendapp/motion';
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Get the API URL from environment variables or use a default
+const API_URL = Constants.expoConfig?.extra?.apiUrl || 'http://localhost:8000';
+
+// For iOS simulator, we need to use localhost instead of 127.0.0.1
+const getApiUrl = () => {
+  // If we're on iOS simulator, replace localhost with the special IP for simulator
+  if (Platform.OS === 'ios' && API_URL.includes('localhost')) {
+    return API_URL.replace('localhost', '127.0.0.1');
+  }
+  return API_URL;
+};
 
 const ProfileScreen = ({ navigation }) => {
-  const { user, logout, isLoading } = useAuth();
+  const { user, logout, deleteAccount, isLoading } = useAuth();
   const [deleteLoading, setDeleteLoading] = useState(false);
 
   const handleLogout = async () => {
@@ -46,15 +61,16 @@ const ProfileScreen = ({ navigation }) => {
   const confirmDeleteAccount = async () => {
     try {
       setDeleteLoading(true);
-      // Here you would call your API to delete the account
-      // For now, we'll just log out
-      await logout();
+      await deleteAccount();
+      
+      // Navigate back to welcome screen
       navigation.reset({
         index: 0,
         routes: [{ name: 'Welcome' }],
       });
     } catch (error) {
-      Alert.alert('Error', 'Failed to delete account. Please try again.');
+      console.error('Delete account error:', error);
+      Alert.alert('Error', error.message || 'Failed to delete account. Please try again.');
     } finally {
       setDeleteLoading(false);
     }

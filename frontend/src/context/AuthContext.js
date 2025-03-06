@@ -25,6 +25,7 @@ const AuthContext = createContext({
   googleLogin: async () => {},
   resetPassword: async () => {},
   logout: () => {},
+  deleteAccount: async () => {},
   isAuthenticated: false,
 });
 
@@ -261,6 +262,68 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Delete account function
+  const deleteAccount = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // Get token
+      const token = await AsyncStorage.getItem('token');
+      
+      if (!token) {
+        throw new Error('Authentication token not found');
+      }
+      
+      console.log('Attempting to delete account...');
+      
+      // Call API to delete account
+      const response = await fetch(`${getAuthApiUrl()}/auth/delete-account`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      console.log('Delete account response status:', response.status);
+      
+      if (!response.ok) {
+        let errorMessage = 'Failed to delete account';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.detail || errorData.message || errorMessage;
+          console.error('Delete account error response:', errorData);
+        } catch (jsonError) {
+          console.error('Error parsing error response:', jsonError);
+          // If we can't parse the JSON, try to get the text
+          try {
+            const errorText = await response.text();
+            console.error('Error response text:', errorText);
+          } catch (textError) {
+            console.error('Error getting response text:', textError);
+          }
+        }
+        throw new Error(errorMessage);
+      }
+      
+      console.log('Account deleted successfully');
+      
+      // Clear storage
+      await AsyncStorage.removeItem('token');
+      await AsyncStorage.removeItem('user');
+      
+      setUser(null);
+      return true;
+    } catch (err) {
+      console.error('Delete account error:', err);
+      setError(err.message || 'Failed to delete account. Please try again.');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Context value
   const value = {
     user,
@@ -271,6 +334,7 @@ export const AuthProvider = ({ children }) => {
     googleLogin,
     resetPassword,
     logout,
+    deleteAccount,
     isAuthenticated: !!user,
   };
 

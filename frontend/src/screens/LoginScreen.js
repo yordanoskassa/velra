@@ -190,7 +190,7 @@ const LoginScreen = () => {
               }}
               style={styles.successMessage}
             >
-              <Ionicons name="checkmark-circle" size={60} color="#4CAF50" />
+              <Ionicons name="checkmark-circle" size={60} color="#FFFFFF" />
               <Text style={styles.successText}>
                 Reset link sent! Check your email.
               </Text>
@@ -314,7 +314,7 @@ const LoginScreen = () => {
                   />
                   {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
                   <TouchableOpacity 
-                    style={styles.forgotPasswordButton}
+                    style={styles.forgotPasswordContainer}
                     onPress={() => setIsResettingPassword(true)}
                   >
                     <Text style={styles.forgotPasswordText}>Forgot password?</Text>
@@ -441,13 +441,14 @@ const LoginScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a237e',
+    backgroundColor: '#000000',
   },
   scrollContainer: {
     flexGrow: 1,
     padding: 20,
   },
   backButtonContainer: {
+    alignItems: 'flex-start',
     marginBottom: 20,
   },
   backButton: {
@@ -462,12 +463,12 @@ const styles = StyleSheet.create({
   headerText: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#4fc3f7',
+    color: '#FFFFFF',
     marginBottom: 8,
   },
   subHeaderText: {
     fontSize: 16,
-    color: '#ffffff',
+    color: '#CCCCCC',
     opacity: 0.8,
   },
   inputContainer: {
@@ -478,28 +479,28 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 15,
     fontSize: 16,
-    color: '#ffffff',
+    color: '#FFFFFF',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   errorText: {
-    color: '#ff5252',
+    color: '#FFFFFF',
     marginTop: 5,
     fontSize: 14,
   },
-  forgotPasswordButton: {
-    alignSelf: 'flex-end',
-    marginTop: 10,
+  forgotPasswordContainer: {
+    alignItems: 'flex-end',
+    marginBottom: 20,
   },
   forgotPasswordText: {
-    color: '#4fc3f7',
+    color: '#FFFFFF',
     fontSize: 14,
   },
   buttonContainer: {
     marginTop: 20,
   },
   button: {
-    backgroundColor: '#4fc3f7',
+    backgroundColor: '#FFFFFF',
     borderRadius: 10,
     padding: 15,
     alignItems: 'center',
@@ -527,13 +528,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
   dividerText: {
-    color: '#ffffff',
+    color: '#FFFFFF',
     paddingHorizontal: 10,
     fontSize: 14,
   },
   googleButton: {
     flexDirection: 'row',
-    backgroundColor: '#ffffff',
+    backgroundColor: '#FFFFFF',
     borderRadius: 10,
     padding: 15,
     alignItems: 'center',
@@ -550,11 +551,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   signupText: {
-    color: '#ffffff',
+    color: '#CCCCCC',
     fontSize: 14,
   },
   signupLink: {
-    color: '#4fc3f7',
+    color: '#FFFFFF',
     fontWeight: 'bold',
   },
   successMessage: {
@@ -563,14 +564,14 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   successText: {
-    color: '#ffffff',
+    color: '#FFFFFF',
     fontSize: 18,
     textAlign: 'center',
     marginTop: 20,
     marginBottom: 30,
   },
   backToLoginButton: {
-    backgroundColor: '#4fc3f7',
+    backgroundColor: '#FFFFFF',
     borderRadius: 10,
     padding: 15,
     alignItems: 'center',

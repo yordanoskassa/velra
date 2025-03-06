@@ -16,6 +16,7 @@ import WelcomeScreen from './src/screens/WelcomeScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import ArticleDetailsScreen from './src/screens/ArticleDetailsScreen';
+import ProfileScreen from './src/screens/ProfileScreen';
 
 // Import theme and context
 import theme from './src/theme';
@@ -44,7 +45,7 @@ function AuthStack() {
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: '#FFFFFF' },
+        contentStyle: { backgroundColor: '#000000' },
       }}
     >
       <Stack.Screen name="Welcome" component={WelcomeScreen} />
@@ -76,6 +77,7 @@ function AppStack() {
           headerTintColor: '#fff',
         }}
       />
+      <Stack.Screen name="Profile" component={ProfileScreen} />
     </Stack.Navigator>
   );
 }
@@ -87,9 +89,9 @@ function RootNavigator() {
   // Show loading screen while checking authentication
   if (isLoading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1a237e' }}>
-        <ActivityIndicator size="large" color="#4fc3f7" />
-        <Text style={{ marginTop: 16, color: '#ffffff', fontSize: 16 }}>Loading...</Text>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000000' }}>
+        <ActivityIndicator size="large" color="#FFFFFF" />
+        <Text style={{ marginTop: 16, color: '#FFFFFF', fontSize: 16 }}>Loading...</Text>
       </View>
     );
   }

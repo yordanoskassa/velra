@@ -323,19 +323,31 @@ const NewsCard = ({ article, onPress, index = 0 }) => {
           },
           {
             title: "Potential Impact on Stocks",
-            description: response.potential_impact.stocks,
+            description: typeof response.potential_impact.stocks === 'object' 
+              ? Object.entries(response.potential_impact.stocks)
+                  .map(([key, value]) => `${key}: ${value}`)
+                  .join('\n\n')
+              : response.potential_impact.stocks,
             impact_level: "medium",
             affected_assets: ["Stocks"]
           },
           {
             title: "Potential Impact on Commodities",
-            description: response.potential_impact.commodities,
+            description: typeof response.potential_impact.commodities === 'object'
+              ? Object.entries(response.potential_impact.commodities)
+                  .map(([key, value]) => `${key}: ${value}`)
+                  .join('\n\n')
+              : response.potential_impact.commodities,
             impact_level: "medium",
             affected_assets: ["Commodities"]
           },
           {
             title: "Potential Impact on Forex",
-            description: response.potential_impact.forex,
+            description: typeof response.potential_impact.forex === 'object'
+              ? Object.entries(response.potential_impact.forex)
+                  .map(([key, value]) => `${key}: ${value}`)
+                  .join('\n\n')
+              : response.potential_impact.forex,
             impact_level: "medium",
             affected_assets: ["Forex"]
           },
