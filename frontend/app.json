@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Headline Decoder",
+    "slug": "headline-decoder",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "backgroundColor": "#000000",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#000000"
+    },
+    "scheme": "headlinedecoder",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.anonymous.headlinedecoder"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#000000"
+      },
+      "package": "com.anonymous.headlinedecoder"
+    },
+    "web": {
+      "backgroundColor": "#000000"
+    }
+  }
+} 
