@@ -17,15 +17,19 @@ import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { Motion } from '@legendapp/motion';
+import { Checkbox } from 'react-native-paper';
 
 const RegisterScreen = () => {
   const [step, setStep] = useState(1);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
   const [nameError, setNameError] = useState('');
   const [emailError, setEmailError] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  const [disclaimerError, setDisclaimerError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   const { register, isLoading } = useAuth();
   const navigation = useNavigation();
@@ -60,20 +64,68 @@ const RegisterScreen = () => {
     }
   };
 
+  const validateDisclaimer = () => {
+    if (!disclaimerAccepted) {
+      setDisclaimerError('You must accept the disclaimer to continue');
+      return false;
+    } else {
+      setDisclaimerError('');
+      return true;
+    }
+  };
+
   const handleRegister = async () => {
-    if (!validatePassword()) {
+    console.log(`Current step: ${step}`);
+    
+    // Validate current step
+    if (step === 3 && !validatePassword()) {
+      console.log('Password validation failed');
       return;
     }
     
+    if (step === 4 && !validateDisclaimer()) {
+      console.log('Disclaimer validation failed');
+      return;
+    }
+    
+    // Move to next step if not on final step
+    if (step < 4) {
+      console.log(`Moving to step ${step + 1}`);
+      setStep(step + 1);
+      return;
+    }
+    
+    // Final step - submit registration
+    console.log('On final step, submitting registration');
+    
     try {
-      await register(name, email, password);
-      // The register function in AuthContext will handle navigation
+      console.log('Registration data:', { name, email, password: '***', disclaimerAccepted });
+      
+      // Show loading indicator
+      setIsSubmitting(true);
+      
+      // Call register function
+      const userData = await register(name, email, password, disclaimerAccepted);
+      
+      console.log('Registration successful, user data received:', userData);
+      
+      // Show success message
+      Alert.alert(
+        'Registration Successful',
+        'Your account has been created successfully.',
+        [{ text: 'OK' }]
+      );
     } catch (error) {
+      console.error('Registration failed in component:', error);
+      
+      // Show error message
       Alert.alert(
         'Registration Failed',
         error.message || 'An error occurred during registration. Please try again.',
         [{ text: 'OK' }]
       );
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -137,14 +189,18 @@ const RegisterScreen = () => {
                 ? "What's your name?" 
                 : step === 2 
                   ? "What's your email?" 
-                  : "Create a password"}
+                : step === 3
+                  ? "Create a password"
+                  : "Important Disclaimer"}
             </Text>
             <Text style={styles.subHeaderText}>
               {step === 1 
                 ? "Let's get to know you" 
                 : step === 2 
                   ? "We'll use this for your account" 
-                  : "Make sure it's secure"}
+                : step === 3
+                  ? "Make sure it's secure"
+                  : "Please read and accept"}
             </Text>
           </Motion.View>
 
@@ -258,6 +314,49 @@ const RegisterScreen = () => {
             </Motion.View>
           )}
 
+          {/* Step 4: Disclaimer */}
+          {step === 4 && (
+            <Motion.View
+              animate={{
+                opacity: 1,
+                x: 0,
+              }}
+              initial={{
+                opacity: 0,
+                x: 100,
+              }}
+              exit={{
+                opacity: 0,
+                x: 100,
+              }}
+              transition={{
+                type: 'spring',
+                damping: 20,
+                stiffness: 300,
+                delay: 0.2,
+              }}
+              style={styles.disclaimerContainer}
+            >
+              <View style={styles.disclaimerBox}>
+                <Text style={styles.disclaimerTitle}>Financial Disclaimer</Text>
+                <Text style={styles.disclaimerText}>
+                  This application does not provide financial advice. The information presented is for informational purposes only and should not be considered as investment advice. Market data, news, and insights are provided as-is without any guarantees of accuracy or reliability. Always consult with a qualified financial advisor before making investment decisions.
+                </Text>
+                <View style={styles.checkboxContainer}>
+                  <Checkbox
+                    status={disclaimerAccepted ? 'checked' : 'unchecked'}
+                    onPress={() => setDisclaimerAccepted(!disclaimerAccepted)}
+                    color="#007AFF"
+                  />
+                  <Text style={styles.checkboxLabel}>
+                    I understand and agree that this app does not provide financial advice
+                  </Text>
+                </View>
+                {disclaimerError ? <Text style={styles.errorText}>{disclaimerError}</Text> : null}
+              </View>
+            </Motion.View>
+          )}
+
           {/* Next/Register Button */}
           <Motion.View
             animate={{
@@ -279,29 +378,35 @@ const RegisterScreen = () => {
             <TouchableOpacity
               style={[
                 styles.button,
-                isLoading ? styles.buttonDisabled : null,
+                (isLoading || isSubmitting) ? styles.buttonDisabled : null,
               ]}
               onPress={() => {
+                if (isLoading || isSubmitting) return;
+                
                 if (step === 1 && validateName()) {
                   setStep(2);
                 } else if (step === 2 && validateEmail()) {
                   setStep(3);
-                } else if (step === 3) {
+                } else if (step === 3 && validatePassword()) {
+                  setStep(4);
+                } else if (step === 4) {
                   handleRegister();
                 }
               }}
               disabled={
                 (step === 1 && !name.trim()) || 
                 (step === 2 && !email.trim()) || 
-                (step === 3 && !password.trim()) || 
-                isLoading
+                (step === 3 && !password.trim()) ||
+                (step === 4 && !disclaimerAccepted) || 
+                isLoading ||
+                isSubmitting
               }
             >
-              {isLoading ? (
+              {isLoading || isSubmitting ? (
                 <ActivityIndicator color="#000" />
               ) : (
                 <Text style={styles.buttonText}>
-                  {step < 3 ? 'Continue' : 'Sign Up'}
+                  {step < 4 ? 'Continue' : 'Sign Up'}
                 </Text>
               )}
             </TouchableOpacity>
@@ -416,6 +521,40 @@ const styles = StyleSheet.create({
   loginLink: {
     color: '#FFFFFF',
     fontWeight: 'bold',
+  },
+  disclaimerContainer: {
+    width: '100%',
+    marginTop: 20,
+  },
+  disclaimerBox: {
+    backgroundColor: '#f8f8f8',
+    borderRadius: 10,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  disclaimerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: '#333',
+  },
+  disclaimerText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#555',
+    marginBottom: 20,
+  },
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  checkboxLabel: {
+    fontSize: 14,
+    color: '#333',
+    marginLeft: 8,
+    flex: 1,
   },
 });
 

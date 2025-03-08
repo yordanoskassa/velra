@@ -1,4 +1,6 @@
 import axios from 'axios';
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
 // Helper function to extract impact values from raw text
 const extractImpactValue = (impactText, assetType) => {
@@ -28,12 +30,21 @@ const createFallbackInsights = () => {
   };
 };
 
-// Replace with your backend URL
-const API_URL = 'http://localhost:8000';
+// Get the API URL from environment variables or use a default
+const API_URL = Constants.expoConfig?.extra?.apiUrl || 'http://localhost:8000';
+
+// For iOS simulator, we need to use 127.0.0.1 instead of localhost
+const getApiUrl = () => {
+  // If we're on iOS simulator, replace localhost with the special IP for simulator
+  if (Platform.OS === 'ios' && API_URL.includes('localhost')) {
+    return API_URL.replace('localhost', '127.0.0.1');
+  }
+  return API_URL;
+};
 
 // Create axios instance
 const apiClient = axios.create({
-  baseURL: API_URL,
+  baseURL: getApiUrl(),
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json'

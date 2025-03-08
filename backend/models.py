@@ -8,6 +8,7 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
+    disclaimer_accepted: bool = False
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -35,6 +36,7 @@ class Token(BaseModel):
 class UserInDB(UserBase):
     hashed_password: Optional[str] = None
     google_id: Optional[str] = None 
+    disclaimer_accepted: bool = False
 
 class Article(BaseModel):
     title: str

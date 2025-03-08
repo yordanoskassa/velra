@@ -18,8 +18,27 @@ const theme = {
     warning: '#ed6c02',
     success: '#2e7d32',
   },
+  fonts: {
+    ...DefaultTheme.fonts,
+    regular: {
+      fontFamily: 'Inter_400Regular',
+      fontWeight: 'normal',
+    },
+    medium: {
+      fontFamily: 'Inter_600SemiBold',
+      fontWeight: 'normal',
+    },
+    light: {
+      fontFamily: 'Inter_400Regular',
+      fontWeight: 'normal',
+    },
+    thin: {
+      fontFamily: 'Inter_400Regular',
+      fontWeight: 'normal',
+    },
+  },
   typography: {
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+    fontFamily: 'Inter_400Regular',
     fontSize: {
       small: 14,
       medium: 16,
@@ -29,9 +48,9 @@ const theme = {
       h3: 28,
     },
     fontWeight: {
-      regular: '400',
-      medium: '500',
-      bold: '700',
+      regular: 'normal',
+      medium: 'normal',
+      bold: 'normal',
     },
   },
   spacing: {

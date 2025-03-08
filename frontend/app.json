@@ -6,25 +6,83 @@
     "orientation": "portrait",
     "backgroundColor": "#000000",
     "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
     "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
     "scheme": "headlinedecoder",
+    
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
+      "buildNumber": "3",
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.headlinedecoder"
+      "bundleIdentifier": "com.anonymous.headlinedecoder",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleIconName": "AppIcon"
+      },
+      "icon": "./assets/icon.png",
+      "appStoreUrl": "https://apps.apple.com/app/headline-decoder/id123456789",
+      "icons": {
+        "spotlight": {
+          "image": "./assets/icon.png",
+          "sizes": [40, 80]
+        },
+        "settings": {
+          "image": "./assets/icon.png",
+          "sizes": [29, 58]
+        },
+        "notification": {
+          "image": "./assets/icon.png",
+          "sizes": [20, 40, 60]
+        },
+        "app": {
+          "image": "./assets/icon.png",
+          "sizes": [60, 120, 180]
+        },
+        "ipad": {
+          "spotlight": {
+            "image": "./assets/icon.png",
+            "sizes": [40, 80]
+          },
+          "app": {
+            "image": "./assets/icon.png",
+            "sizes": [76, 152, 167]
+          },
+          "notification": {
+            "image": "./assets/icon.png",
+            "sizes": [20, 40]
+          },
+          "settings": {
+            "image": "./assets/icon.png",
+            "sizes": [29, 58]
+          }
+        },
+        "appStore": {
+          "image": "./assets/icon.png",
+          "size": 1024
+        }
+      }
     },
     "android": {
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
       "package": "com.anonymous.headlinedecoder"
     },
     "web": {
+      "favicon": "./assets/favicon.png",
       "backgroundColor": "#000000"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "16a52a87-af3d-400e-92ec-c3be02b115cd"
+      }
     }
   }
-} 
+}

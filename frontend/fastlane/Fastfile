@@ -1,0 +1,72 @@
+# This file contains the fastlane.tools configuration
+# You can find the documentation at https://docs.fastlane.tools
+#
+# For a list of all available actions, check out
+#
+#     https://docs.fastlane.tools/actions
+#
+# For a list of all available plugins, check out
+#
+#     https://docs.fastlane.tools/plugins/available-plugins
+#
+
+# Uncomment the line if you want fastlane to automatically update itself
+# update_fastlane
+
+default_platform(:ios)
+
+platform :ios do
+  desc "Generate new localized screenshots"
+  lane :screenshots do
+    # For Expo/React Native projects, we need to use frameit directly
+    # since we don't have a traditional Xcode project
+    
+    # First, make sure the screenshots directory exists
+    sh("mkdir -p ./fastlane/screenshots")
+    
+    # Instructions for manual screenshot capture
+    puts "For Expo/React Native projects, you need to capture screenshots manually."
+    puts "Please follow these steps:"
+    puts "1. Run your app on the required simulators (iPhone 8 Plus, iPhone 11 Pro Max, etc.)"
+    puts "2. Navigate to each screen you want to capture"
+    puts "3. Take screenshots using Cmd+S in the simulator"
+    puts "4. Save the screenshots to ./fastlane/screenshots with proper naming"
+    puts "5. Once you have all screenshots, you can use frameit to add frames"
+    
+    # Optional: Use frameit if screenshots are already captured
+    # frameit
+  end
+
+  desc "Add frames to existing screenshots"
+  lane :frame_screenshots do
+    frameit
+  end
+
+  desc "Upload screenshots to App Store"
+  lane :upload_screenshots do
+    deliver(
+      skip_binary_upload: true,
+      skip_metadata: true,
+      skip_screenshots: false,
+      screenshots_path: "./fastlane/screenshots"
+    )
+  end
+  
+  desc "Submit latest build to TestFlight"
+  lane :beta do
+    # For Expo projects, we use eas to build and submit
+    # This lane is a wrapper around the eas commands
+    
+    puts "Building and submitting to TestFlight using EAS..."
+    puts "Make sure you have eas-cli installed: npm install -g eas-cli"
+    
+    # Build the app using EAS
+    sh("eas build --platform ios --profile preview --non-interactive")
+    
+    # Submit the latest build to TestFlight
+    sh("eas submit --platform ios --latest")
+    
+    puts "Build submitted to TestFlight!"
+    puts "Check your Apple Developer account for status updates."
+  end
+end

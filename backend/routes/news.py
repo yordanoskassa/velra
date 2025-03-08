@@ -33,7 +33,7 @@ news_router = APIRouter(prefix="", tags=["News"])
 @news_router.post("/api/market-insights/article")
 async def generate_gemini_insights(article: Article):
     """Generate market insights using Gemini AI"""
-    prompt = f"""Analyze this financial news article and provide structured insights:
+    prompt = f"""Analyze this financial news article and provide structured insights the confidence score should be between 0 and 100 based on the analysis:
         Title: {article.title if article.title else 'No Title'}
         Content: {article.content}
         Source: {article.source if article.source else 'Unknown Source'}
@@ -100,6 +100,9 @@ async def generate_gemini_insights(article: Article):
             # Ensure recommended_actions is an array
             if not isinstance(parsed_response.get("recommended_actions", []), list):
                 parsed_response["recommended_actions"] = [str(parsed_response["recommended_actions"])]
+
+            # Ensure confidence_score is an intege:
+            
                 
             # Add confidence score if missing
             if "confidence_score" not in parsed_response:
@@ -161,12 +164,20 @@ async def get_news(analyze: bool = False):
             raise HTTPException(status_code=500, detail="Database connection not available")
         
         # Get headlines, sorted by published date (newest first)
+        print("Fetching headlines from database, sorted by published_datetime_utc")
         cursor = headlines_collection.find({}).sort("published_datetime_utc", -1).limit(10)
         headlines = await cursor.to_list(length=10)
+        
+        print(f"Found {len(headlines)} headlines in database")
         
         # Convert ObjectId to string for JSON serialization
         for headline in headlines:
             headline["_id"] = str(headline["_id"])
+            
+        # Log the first headline's date to verify sorting
+        if headlines and len(headlines) > 0:
+            print(f"Most recent headline date: {headlines[0].get('published_datetime_utc', 'No date')}")
+            print(f"Most recent headline title: {headlines[0].get('title', 'No title')}")
         
         # Transform the data to match the format expected by the frontend
         articles = []
@@ -231,10 +242,19 @@ async def fetch_rapidapi_headlines():
         "x-rapidapi-key": settings.RAPIDAPI_KEY
     }
     
+    print(f"Fetching headlines from RapidAPI with host: {settings.RAPIDAPI_HOST}")
+    print(f"API Key available: {'Yes' if settings.RAPIDAPI_KEY else 'No'}")
+    
     async with httpx.AsyncClient() as client:
         response = await client.get(url, headers=headers, params=querystring, timeout=30.0)
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        
+        # Log the response structure to help debug
+        print(f"RapidAPI response status: {data.get('status', 'No status')}")
+        print(f"Number of headlines received: {len(data.get('data', []))}")
+        
+        return data
 
 @news_router.post("/api/fetch-rapidapi-headlines")
 async def fetch_and_save_rapidapi_headlines(background_tasks: BackgroundTasks):
@@ -261,7 +281,10 @@ async def _fetch_and_save_headlines():
         
         # Process and save headlines
         headlines = headlines_data.get("data", [])
+        print(f"Processing {len(headlines)} headlines from RapidAPI")
+        
         saved_count = 0
+        updated_count = 0
         
         for headline in headlines[:50]:  # Limit to 50 headlines
             try:
@@ -291,11 +314,24 @@ async def _fetch_and_save_headlines():
                     # Insert new headline
                     await headlines_collection.insert_one(headline_dict)
                     saved_count += 1
+                    print(f"Saved new headline: {headline_dict['title'][:50]}...")
+                else:
+                    # Update existing headline with new data
+                    await headlines_collection.update_one(
+                        {"link": headline_dict["link"]},
+                        {"$set": headline_dict}
+                    )
+                    updated_count += 1
             except Exception as e:
                 print(f"Error processing headline: {str(e)}")
                 continue
         
         print(f"Saved {saved_count} new headlines to database")
+        print(f"Updated {updated_count} existing headlines in database")
+        
+        # Get total count of headlines in database
+        total_count = await headlines_collection.count_documents({})
+        print(f"Total headlines in database: {total_count}")
         
     except Exception as e:
         print(f"Error in background task: {str(e)}")

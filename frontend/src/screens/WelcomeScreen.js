@@ -6,17 +6,12 @@ import {
   TouchableOpacity,
   StatusBar,
   Dimensions,
-  LinearGradient
+  ImageBackground
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Motion } from '@legendapp/motion';
 import { Ionicons } from '@expo/vector-icons';
-// Remove @env import and use hardcoded values
-// import { GOOGLE_CLIENT_ID, FRONTEND_URL } from '@env';
-
-// Hardcoded values for development
-const GOOGLE_CLIENT_ID = "960956410891-k6imbmuqgd40hiurti4mes5kp78gvggq.apps.googleusercontent.com";
-const FRONTEND_URL = "http://localhost:3000";
+import { LinearGradient } from 'expo-linear-gradient';
 
 const { width, height } = Dimensions.get('window');
 
@@ -26,7 +21,12 @@ const WelcomeScreen = () => {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
-      <View style={styles.background}>
+      <LinearGradient
+        colors={['#121212', '#1E3A8A', '#000000']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.background}
+      >
         <View style={styles.overlay}>
           <Motion.View
             animate={{
@@ -46,6 +46,7 @@ const WelcomeScreen = () => {
           >
             <Text style={styles.headlineText}>HEADLINE</Text>
             <Text style={styles.decoderText}>DECODER</Text>
+            <View style={styles.underline} />
           </Motion.View>
 
           <Motion.View
@@ -91,7 +92,12 @@ const WelcomeScreen = () => {
                 style={styles.loginButton}
                 onPress={() => navigation.navigate('Login')}
               >
-                <Text style={styles.loginButtonText}>Log In</Text>
+                <LinearGradient
+                  colors={['#FFFFFF', '#F0F0F0']}
+                  style={styles.buttonGradient}
+                >
+                  <Text style={styles.loginButtonText}>Log In</Text>
+                </LinearGradient>
               </TouchableOpacity>
             </Motion.View>
 
@@ -116,6 +122,7 @@ const WelcomeScreen = () => {
                 onPress={() => navigation.navigate('Register')}
               >
                 <Text style={styles.registerButtonText}>Sign Up</Text>
+                <View style={styles.buttonUnderline} />
               </TouchableOpacity>
             </Motion.View>
           </View>
@@ -136,15 +143,9 @@ const WelcomeScreen = () => {
             <Text style={styles.footerText}>
               By continuing, you agree to our Terms of Service and Privacy Policy
             </Text>
-            <Text style={styles.footerText}>
-              Client ID: {GOOGLE_CLIENT_ID}
-            </Text>
-            <Text style={styles.footerText}>
-              Frontend URL: {FRONTEND_URL}
-            </Text>
           </Motion.View>
         </View>
-      </View>
+      </LinearGradient>
     </View>
   );
 };
@@ -157,11 +158,9 @@ const styles = StyleSheet.create({
     flex: 1,
     width: width,
     height: height,
-    backgroundColor: '#000000',
   },
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.9)',
     padding: 20,
     justifyContent: 'center',
   },
@@ -184,6 +183,13 @@ const styles = StyleSheet.create({
     letterSpacing: 4,
     marginTop: -5,
   },
+  underline: {
+    height: 2,
+    width: 100,
+    backgroundColor: '#4F46E5',
+    marginTop: 15,
+    borderRadius: 2,
+  },
   taglineContainer: {
     alignItems: 'center',
     marginBottom: 60,
@@ -193,16 +199,24 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     textAlign: 'center',
     lineHeight: 26,
+    letterSpacing: 0.5,
   },
   buttonContainer: {
     marginBottom: 40,
   },
   loginButton: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
+    borderRadius: 12,
+    marginBottom: 16,
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  buttonGradient: {
     padding: 16,
     alignItems: 'center',
-    marginBottom: 16,
   },
   loginButtonText: {
     color: '#000000',
@@ -211,16 +225,21 @@ const styles = StyleSheet.create({
   },
   registerButton: {
     backgroundColor: 'transparent',
-    borderRadius: 10,
+    borderRadius: 12,
     padding: 16,
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
   },
   registerButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  buttonUnderline: {
+    height: 2,
+    width: 40,
+    backgroundColor: '#FFFFFF',
+    marginTop: 8,
+    borderRadius: 2,
   },
   footer: {
     alignItems: 'center',
@@ -229,6 +248,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.6)',
     textAlign: 'center',
     fontSize: 12,
+    letterSpacing: 0.5,
   },
 });
 

@@ -91,9 +91,30 @@ function AppStack() {
 // Main navigator that handles authentication state
 function RootNavigator() {
   const { user, isLoading } = useAuth();
+  const [isNavigationReady, setIsNavigationReady] = React.useState(false);
+  const navigationRef = React.useRef(null);
+
+  // Log when user state changes
+  React.useEffect(() => {
+    console.log('RootNavigator: User state changed:', user ? `Logged in as ${user.email}` : 'Logged out');
+    
+    if (user) {
+      console.log('RootNavigator: User is authenticated, showing AppStack');
+    } else {
+      console.log('RootNavigator: User is not authenticated, showing AuthStack');
+    }
+  }, [user]);
+
+  // Handle navigation state change
+  const onNavigationStateChange = () => {
+    if (!isNavigationReady) {
+      setIsNavigationReady(true);
+    }
+  };
 
   // Show loading screen while checking authentication
   if (isLoading) {
+    console.log('RootNavigator: Loading auth state...');
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000000' }}>
         <ActivityIndicator size="large" color="#FFFFFF" />
@@ -102,8 +123,13 @@ function RootNavigator() {
     );
   }
 
+  console.log('RootNavigator: Rendering with user:', user ? `Authenticated as ${user.email}` : 'Not authenticated');
+
   return (
-    <NavigationContainer>
+    <NavigationContainer 
+      ref={navigationRef}
+      onStateChange={onNavigationStateChange}
+    >
       <StatusBar style="light" />
       {user ? <AppStack /> : <AuthStack />}
     </NavigationContainer>

@@ -98,23 +98,31 @@ async def register_user(user: UserCreate):
     user_dict = user.dict()
     del user_dict["password"]
     user_dict["hashed_password"] = hashed_password
+    user_dict["created_at"] = datetime.utcnow()
     
-    # Insert into database
-    await users.insert_one(user_dict)
+    # Ensure disclaimer is accepted
+    if not user_dict.get("disclaimer_accepted", False):
+        raise HTTPException(status_code=400, detail="You must accept the disclaimer to register")
+    
+    # Insert the user
+    result = await users.insert_one(user_dict)
     
     # Create access token
+    user_id = str(result.inserted_id)
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.email}, 
-        expires_delta=access_token_expires
+        data={"sub": user.email}, expires_delta=access_token_expires
     )
     
-    # Return token with user info
-    return Token(
-        access_token=access_token,
-        email=user.email,
-        name=user.name
-    )
+    # Return token and user info
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "email": user.email,
+        "name": user.name,
+        "id": user_id,
+        "disclaimer_accepted": user_dict.get("disclaimer_accepted", False)
+    }
 
 @auth_router.post("/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):

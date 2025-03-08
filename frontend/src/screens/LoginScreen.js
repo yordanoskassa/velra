@@ -12,7 +12,8 @@ import {
   Keyboard,
   ActivityIndicator,
   Alert,
-  ScrollView
+  ScrollView,
+  Animated
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
@@ -28,6 +29,8 @@ const LoginScreen = () => {
   const [passwordError, setPasswordError] = useState('');
   const [resetEmailSent, setResetEmailSent] = useState(false);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [backButtonPressed, setBackButtonPressed] = useState(false);
+  const backButtonScale = new Animated.Value(1);
   
   const { login, googleLogin, resetPassword, isLoading, error } = useAuth();
   const navigation = useNavigation();
@@ -102,11 +105,34 @@ const LoginScreen = () => {
   };
 
   const goBack = () => {
-    if (step > 1) {
+    if (isResettingPassword) {
+      setIsResettingPassword(false);
+      setResetEmailSent(false);
+    } else if (step > 1) {
       setStep(step - 1);
     } else {
       navigation.goBack();
     }
+  };
+
+  const handleBackButtonPress = () => {
+    // Visual feedback
+    setBackButtonPressed(true);
+    Animated.sequence([
+      Animated.timing(backButtonScale, {
+        toValue: 0.9,
+        duration: 100,
+        useNativeDriver: true
+      }),
+      Animated.timing(backButtonScale, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true
+      })
+    ]).start(() => {
+      setBackButtonPressed(false);
+      goBack();
+    });
   };
 
   return (
@@ -133,9 +159,18 @@ const LoginScreen = () => {
             }}
             style={styles.backButtonContainer}
           >
-            <TouchableOpacity onPress={goBack} style={styles.backButton}>
-              <Ionicons name="arrow-back" size={24} color="white" />
-            </TouchableOpacity>
+            <Animated.View style={{ transform: [{ scale: backButtonScale }] }}>
+              <TouchableOpacity 
+                onPress={handleBackButtonPress} 
+                style={[
+                  styles.backButton,
+                  backButtonPressed && styles.backButtonPressed
+                ]}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="arrow-back" size={24} color="white" />
+              </TouchableOpacity>
+            </Animated.View>
           </Motion.View>
 
           {/* Header */}
@@ -277,6 +312,12 @@ const LoginScreen = () => {
                     autoFocus
                   />
                   {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
+                  <TouchableOpacity 
+                    style={styles.backToLoginLinkContainer}
+                    onPress={() => setIsResettingPassword(false)}
+                  >
+                    <Text style={styles.backToLoginLink}>Back to Login</Text>
+                  </TouchableOpacity>
                 </Motion.View>
               )}
 
@@ -450,15 +491,25 @@ const styles = StyleSheet.create({
   backButtonContainer: {
     alignItems: 'flex-start',
     marginBottom: 20,
+    position: 'absolute',
+    top: 25,
+    left: 10,
+    zIndex: 10,
   },
   backButton: {
     width: 40,
     height: 40,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 20,
+  },
+  backButtonPressed: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
   headerContainer: {
     marginBottom: 30,
+    marginTop: 75,
   },
   headerText: {
     fontSize: 28,
@@ -582,6 +633,15 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  backToLoginLinkContainer: {
+    alignItems: 'flex-start',
+    marginTop: 15,
+  },
+  backToLoginLink: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    textDecorationLine: 'underline',
   },
 });
 

@@ -107,7 +107,7 @@ const ProfileScreen = ({ navigation }) => {
           onPress={() => navigation.goBack()}
           style={styles.backButton}
         >
-          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+          <Ionicons name="arrow-back" size={24} color="#000000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Profile</Text>
         <View style={styles.placeholder} />
@@ -180,13 +180,13 @@ const ProfileScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: '#FFFFFF',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#000000',
+    backgroundColor: '#FFFFFF',
   },
   header: {
     flexDirection: 'row',
@@ -205,7 +205,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: '#000000',
   },
   placeholder: {
     width: 40,
@@ -222,7 +222,7 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: '#333333',
+    backgroundColor: '#000000',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -238,12 +238,12 @@ const styles = StyleSheet.create({
   nameText: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: '#000000',
     marginBottom: 5,
   },
   emailText: {
     fontSize: 16,
-    color: '#CCCCCC',
+    color: '#000000',
   },
   actionsContainer: {
     width: '100%',
@@ -277,15 +277,16 @@ const styles = StyleSheet.create({
     marginTop: 'auto',
   },
   disclaimerText: {
-    color: '#999999',
     fontSize: 12,
+    color: '#000000',
     textAlign: 'center',
+    paddingHorizontal: 20,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 10,
+    color: '#000000',
+    marginBottom: 15,
   },
   legalButton: {
     flexDirection: 'row',
@@ -306,12 +307,15 @@ const styles = StyleSheet.create({
   },
   settingsButton: {
     flexDirection: 'row',
-    backgroundColor: '#333333',
-    borderRadius: 10,
-    padding: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 15,
+    backgroundColor: '#000000',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    position: 'absolute',
+    bottom: 30,
+    right: 20,
   },
 });
 

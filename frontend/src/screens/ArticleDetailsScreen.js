@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, ScrollView, View, Image, ActivityIndicator, Linking } from 'react-native';
+import { StyleSheet, ScrollView, View, Image, ActivityIndicator, Linking, Alert } from 'react-native';
 import { Appbar, Text, Button, Divider, Card } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import InsightCard from '../components/InsightCard';
@@ -88,7 +88,11 @@ const ArticleDetailsScreen = ({ route, navigation }) => {
 
   const handleOpenArticle = () => {
     if (article.url) {
-      Linking.openURL(article.url);
+      console.log('Opening URL in browser:', article.url);
+      Linking.openURL(article.url).catch(err => {
+        console.error('Error opening URL:', err);
+        Alert.alert('Error', 'Could not open the article link. Please try again later.');
+      });
     }
   };
 
@@ -199,12 +203,12 @@ const ArticleDetailsScreen = ({ route, navigation }) => {
         {/* Article Details */}
         <View style={styles.articleContainer}>
           <Text style={styles.title}>{article.title}</Text>
+          <Text style={styles.snippet}>{article.content || 'No content available'}</Text>
           <View style={styles.sourceContainer}>
             <Text style={styles.source}>{article.source?.name || 'Unknown source'}</Text>
             <Text style={styles.date}>{formatDate(article.publishedAt)}</Text>
           </View>
           <Text style={styles.description}>{article.description}</Text>
-          <Text style={styles.content}>{article.content || 'No content available'}</Text>
           
           <Button 
             mode="contained" 
@@ -290,6 +294,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     color: '#333',
   },
+  snippet: {
+    fontSize: 16,
+    lineHeight: 24,
+    color: '#444',
+    marginBottom: 16,
+    fontStyle: 'italic',
+  },
   sourceContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -310,12 +321,6 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 16,
     fontWeight: '500',
-  },
-  content: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: '#444',
-    marginBottom: 20,
   },
   readMoreButton: {
     marginTop: 8,

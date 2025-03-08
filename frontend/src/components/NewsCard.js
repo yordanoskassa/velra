@@ -536,7 +536,7 @@ const NewsCard = ({ article, onPress, index = 0 }) => {
     publishedAt: article?.publishedAt ? new Date(article.publishedAt) : new Date(),
     sentiment: article?.sentiment || 'neutral',
     category: article?.category || 'stocks',
-    summary: article?.summary || 'Latest financial news updates',
+    summary: article?.summary || article?.content || 'No content available',
     imageUrl: article?.urlToImage || '/placeholder-news.jpg'
   };
 
@@ -589,7 +589,6 @@ const NewsCard = ({ article, onPress, index = 0 }) => {
         <Card.Content style={styles.cardContent}>
           <View style={styles.sourceContainer}>
             <Text style={styles.source}>{getSourceName()}</Text>
-            <Text style={styles.date}>{formatDate(safeArticle.publishedAt.toISOString())}</Text>
           </View>
           
           <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
@@ -737,11 +736,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontFamily: 'Inter-SemiBold',
     textTransform: 'uppercase',
-  },
-  date: {
-    fontSize: 12,
-    color: '#666666',
-    fontFamily: 'Inter-Regular',
   },
   title: {
     fontSize: 18,

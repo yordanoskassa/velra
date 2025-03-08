@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, FlatList, View, ActivityIndicator, RefreshControl, Linking, Animated, Easing, TouchableOpacity } from 'react-native';
+import { StyleSheet, FlatList, View, ActivityIndicator, RefreshControl, Linking, Animated, Easing, TouchableOpacity, Alert } from 'react-native';
 import { Appbar, Text, useTheme } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -120,17 +120,20 @@ const NewsScreen = ({ navigation }) => {
   };
 
   const handleArticlePress = (article) => {
-    // Open the full article in the browser
+    // Open the article directly in the device's browser
     if (article.url) {
-      console.log('Opening URL:', article.url);
+      console.log('Opening URL in browser:', article.url);
       Linking.openURL(article.url).catch(err => {
         console.error('Error opening URL:', err);
-        // Show a fallback message if URL can't be opened
-        alert('Could not open the article link. Please try again later.');
+        Alert.alert('Error', 'Could not open the article link. Please try again later.');
       });
     } else {
       console.log('No URL available for article:', article.title);
     }
+  };
+
+  const handleCloseBrowser = () => {
+    setBrowserVisible(false);
   };
 
   const renderItem = ({ item, index }) => (
@@ -177,21 +180,18 @@ const NewsScreen = ({ navigation }) => {
         </TouchableOpacity>
       </Animated.View>
 
-      {loading && !refreshing ? (
-        <View style={styles.loadingContainer}>
-          <LoadingSpinner />
-          <Text style={styles.loadingText}>Loading latest news...</Text>
-        </View>
+      {loading ? (
+        <LoadingSpinner />
       ) : error ? (
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{error}</Text>
         </View>
       ) : (
-        <Animated.FlatList
+        <FlatList
           data={news}
           renderItem={renderItem}
-          keyExtractor={(item, index) => `news-${index}-${item.title}`}
-          contentContainerStyle={styles.listContent}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContainer}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -264,7 +264,7 @@ const styles = StyleSheet.create({
     color: '#666666',
     marginTop: 4,
   },
-  listContent: {
+  listContainer: {
     padding: 16,
     paddingTop: 8,
   },
@@ -318,6 +318,12 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 10,
     backgroundColor: '#000000',
+  },
+  refreshButton: {
+    padding: 10,
+    borderRadius: 20,
+    backgroundColor: '#f0f0f0',
+    marginLeft: 'auto',
   },
 });
 
