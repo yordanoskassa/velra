@@ -32,6 +32,13 @@ def get_database():
     """Return database instance"""
     return db
 
+async def get_mongodb_connection():
+    """Return database instance (async version)"""
+    if db is None:
+        logger.warning("Database connection not initialized. Attempting to connect...")
+        await connect_to_mongodb()
+    return db
+
 def get_user_collection():
     """Return users collection"""
     if db is None:
@@ -44,4 +51,18 @@ def get_headlines_collection():
     if db is None:
         logger.warning("Database connection not initialized. Returning None for headlines collection.")
         return None
-    return db.headlines 
+    return db.headlines
+
+def get_device_tokens_collection():
+    """Return device tokens collection for push notifications"""
+    if db is None:
+        logger.warning("Database connection not initialized. Returning None for device tokens collection.")
+        return None
+    return db.device_tokens
+
+def get_notification_preferences_collection():
+    """Return notification preferences collection"""
+    if db is None:
+        logger.warning("Database connection not initialized. Returning None for notification preferences collection.")
+        return None
+    return db.notification_preferences 

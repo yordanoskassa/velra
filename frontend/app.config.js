@@ -1,15 +1,16 @@
 import { ExpoConfig } from 'expo/config';
 
-// Get the API URL from environment variables or use a default
-const API_URL = process.env.API_URL || 'http://localhost:8000';
+// Get the API URL from environment variables or use local IP for development
+const API_URL = process.env.API_URL || 'https://decodr-api.onrender.com';
 
 const config = {
-  name: "Headline Decoder",
+  name: "Decodr",
   slug: "headline-decoder",
-  version: "1.0.0",
+  version: "2.0.0",
   orientation: "portrait",
-  icon: "./assets/icon.png",
+  backgroundColor: "#000000",
   userInterfaceStyle: "light",
+  icon: "./assets/icon.png",
   splash: {
     image: "./assets/splash.png",
     resizeMode: "contain",
@@ -19,15 +20,36 @@ const config = {
     "**/*"
   ],
   ios: {
+    buildNumber: "12",
     supportsTablet: true,
-    bundleIdentifier: "com.anonymous.headlinedecoder"
+    bundleIdentifier: "com.anonymous.headlinedecoder",
+    infoPlist: {
+      ITSAppUsesNonExemptEncryption: false,
+      CFBundleIconName: "AppIcon",
+      NSMediaLibraryUsageDescription: "Allow $(PRODUCT_NAME) to access your media library",
+      NSAppTransportSecurity: {
+        NSAllowsArbitraryLoads: true,
+        NSExceptionDomains: {
+          "ngrok-free.app": {
+            NSExceptionAllowsInsecureHTTPLoads: true,
+            NSIncludesSubdomains: true
+          },
+          "onrender.com": {
+            NSExceptionAllowsInsecureHTTPLoads: true,
+            NSIncludesSubdomains: true
+          }
+        }
+      }
+    },
+    icon: "./assets/icon.png",
   },
   android: {
+    package: "com.anonymous.headlinedecoder",
+    versionCode: 1,
     adaptiveIcon: {
-      foregroundImage: "./assets/adaptive-icon.png",
+      foregroundImage: "./assets/icon.png",
       backgroundColor: "#000000"
-    },
-    package: "com.anonymous.headlinedecoder"
+    }
   },
   web: {
     favicon: "./assets/favicon.png"
@@ -35,9 +57,24 @@ const config = {
   extra: {
     apiUrl: API_URL,
     eas: {
-      projectId: "16a52a87-af3d-400e-92ec-c3be02b115cd"
+      projectId: "xxx"
     }
-  }
+  },
+  scheme: "decodr",
+  jsEngine: "hermes",
+  experiments: {
+    tsconfigPaths: true
+  },
+  plugins: [
+    [
+      "expo-media-library",
+      {
+        photosPermission: "Allow $(PRODUCT_NAME) to access your photos.",
+        savePhotosPermission: "Allow $(PRODUCT_NAME) to save photos.",
+        isAccessMediaLocationEnabled: true
+      }
+    ]
+  ]
 };
 
 export default config; 

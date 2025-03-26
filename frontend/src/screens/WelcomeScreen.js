@@ -12,21 +12,59 @@ import { useNavigation } from '@react-navigation/native';
 import { Motion } from '@legendapp/motion';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import GridBackground from '../components/GridBackground';
 
 const { width, height } = Dimensions.get('window');
 
 const WelcomeScreen = () => {
   const navigation = useNavigation();
 
+  // Handle back button press
+  const handleBackPress = () => {
+    // Check if we can go back in the stack
+    if (navigation.canGoBack()) {
+      // If possible, go back to the previous screen
+      navigation.goBack();
+    } else {
+      // If there's no previous screen, navigate to MainApp
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'MainApp' }],
+      });
+    }
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
-      <LinearGradient
-        colors={['#121212', '#1E3A8A', '#000000']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.background}
-      >
+      <View style={styles.background}>
+        {/* Grid Background */}
+        <GridBackground />
+        
+        <Motion.View
+          animate={{
+            opacity: 1,
+            x: 0,
+          }}
+          initial={{
+            opacity: 0,
+            x: -20,
+          }}
+          transition={{
+            type: 'spring',
+            damping: 20,
+            stiffness: 300,
+          }}
+          style={styles.backButtonContainer}
+        >
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={handleBackPress}
+          >
+            <Ionicons name="arrow-back" size={22} color="#888888" />
+          </TouchableOpacity>
+        </Motion.View>
+
         <View style={styles.overlay}>
           <Motion.View
             animate={{
@@ -44,9 +82,7 @@ const WelcomeScreen = () => {
             }}
             style={styles.logoContainer}
           >
-            <Text style={styles.headlineText}>HEADLINE</Text>
-            <Text style={styles.decoderText}>DECODER</Text>
-            <View style={styles.underline} />
+            <Text style={styles.headlineText}>DECODR</Text>
           </Motion.View>
 
           <Motion.View
@@ -92,12 +128,14 @@ const WelcomeScreen = () => {
                 style={styles.loginButton}
                 onPress={() => navigation.navigate('Login')}
               >
-                <LinearGradient
-                  colors={['#FFFFFF', '#F0F0F0']}
-                  style={styles.buttonGradient}
-                >
-                  <Text style={styles.loginButtonText}>Log In</Text>
-                </LinearGradient>
+                <View style={styles.buttonWrapper}>
+                  <LinearGradient
+                    colors={['#000000', '#333333']}
+                    style={styles.buttonGradient}
+                  >
+                    <Text style={styles.loginButtonText}>Log In</Text>
+                  </LinearGradient>
+                </View>
               </TouchableOpacity>
             </Motion.View>
 
@@ -122,7 +160,6 @@ const WelcomeScreen = () => {
                 onPress={() => navigation.navigate('Register')}
               >
                 <Text style={styles.registerButtonText}>Sign Up</Text>
-                <View style={styles.buttonUnderline} />
               </TouchableOpacity>
             </Motion.View>
           </View>
@@ -145,7 +182,7 @@ const WelcomeScreen = () => {
             </Text>
           </Motion.View>
         </View>
-      </LinearGradient>
+      </View>
     </View>
   );
 };
@@ -153,16 +190,33 @@ const WelcomeScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
   },
   background: {
     flex: 1,
     width: width,
     height: height,
+    backgroundColor: '#FFFFFF',
+  },
+  backButtonContainer: {
+    position: 'absolute',
+    top: 80,
+    left: 20,
+    zIndex: 10,
+  },
+  backButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 0,
+    backgroundColor: 'rgba(200, 200, 200, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   overlay: {
     flex: 1,
     padding: 20,
     justifyContent: 'center',
+    zIndex: 1,
   },
   logoContainer: {
     alignItems: 'center',
@@ -170,25 +224,10 @@ const styles = StyleSheet.create({
   },
   headlineText: {
     fontSize: 40,
-    fontFamily: 'Times New Roman',
+    fontFamily: 'OldEnglish',
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: '#000000',
     letterSpacing: 2,
-  },
-  decoderText: {
-    fontSize: 34,
-    fontFamily: 'Courier New',
-    fontWeight: '400',
-    color: '#CCCCCC',
-    letterSpacing: 4,
-    marginTop: -5,
-  },
-  underline: {
-    height: 2,
-    width: 100,
-    backgroundColor: '#4F46E5',
-    marginTop: 15,
-    borderRadius: 2,
   },
   taglineContainer: {
     alignItems: 'center',
@@ -196,7 +235,7 @@ const styles = StyleSheet.create({
   },
   taglineText: {
     fontSize: 18,
-    color: '#FFFFFF',
+    color: '#000000',
     textAlign: 'center',
     lineHeight: 26,
     letterSpacing: 0.5,
@@ -205,49 +244,45 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   loginButton: {
-    borderRadius: 12,
+    borderRadius: 0,
     marginBottom: 16,
-    overflow: 'hidden',
     elevation: 3,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
   },
+  buttonWrapper: {
+    borderRadius: 0,
+    overflow: 'hidden',
+  },
   buttonGradient: {
     padding: 16,
     alignItems: 'center',
   },
   loginButtonText: {
-    color: '#000000',
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
   },
   registerButton: {
     backgroundColor: 'transparent',
-    borderRadius: 12,
+    borderRadius: 0,
     padding: 16,
     alignItems: 'center',
   },
   registerButtonText: {
-    color: '#FFFFFF',
+    color: '#000000',
     fontSize: 16,
     fontWeight: 'bold',
-  },
-  buttonUnderline: {
-    height: 2,
-    width: 40,
-    backgroundColor: '#FFFFFF',
-    marginTop: 8,
-    borderRadius: 2,
   },
   footer: {
     alignItems: 'center',
   },
   footerText: {
-    color: 'rgba(255, 255, 255, 0.6)',
+    color: 'rgba(0, 0, 0, 0.6)',
     textAlign: 'center',
-    fontSize: 12,
+    fontSize: 10,
     letterSpacing: 0.5,
   },
 });

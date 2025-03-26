@@ -4,7 +4,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from typing import Optional
-from models import UserCreate, UserLogin, Token, UserInDB, PasswordResetRequest, PasswordReset, GoogleAuthRequest
+from models import UserCreate, UserLogin, Token, UserInDB, PasswordResetRequest, PasswordReset, GoogleAuthRequest, SubscriptionRequest, SubscriptionResponse, AppleAuthRequest
 from config import settings
 import secrets
 import smtplib
@@ -13,6 +13,9 @@ from email.mime.multipart import MIMEMultipart
 import httpx
 from bson import ObjectId
 from database import get_user_collection
+import uuid
+import base64
+import json
 
 auth_router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -55,6 +58,25 @@ async def authenticate_user(email: str, password: str):
         
     # Convert to UserInDB model
     return UserInDB(**user_doc)
+
+async def is_admin(user: UserInDB, db):
+    """Check if a user has admin privileges"""
+    try:
+        # Get user document to check for admin flag
+        if not user or not user.email:
+            return False
+            
+        users_collection = db["users"]
+        user_doc = await users_collection.find_one({"email": user.email})
+        
+        if not user_doc:
+            return False
+            
+        # Check if user has admin flag set to true
+        return user_doc.get("is_admin", False) == True
+    except Exception as e:
+        print(f"Error checking admin status: {str(e)}")
+        return False
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     """Create JWT access token"""
@@ -126,7 +148,7 @@ async def register_user(user: UserCreate):
 
 @auth_router.post("/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    """OAuth2 compatible token login"""
+    """OAuth2 compatible token login, get an access token for future requests"""
     user = await authenticate_user(form_data.username, form_data.password)
     if not user:
         raise HTTPException(
@@ -134,39 +156,46 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.email}, 
+        data={"sub": user.email, "name": user.name, "is_premium": user.is_premium if hasattr(user, "is_premium") else False}, 
         expires_delta=access_token_expires
     )
     
     return Token(
-        access_token=access_token,
-        email=user.email,
-        name=user.name
+        access_token=access_token, 
+        token_type="bearer", 
+        email=user.email, 
+        name=user.name,
+        id=str(user.id) if hasattr(user, "id") else None,
+        is_premium=user.is_premium if hasattr(user, "is_premium") else False
     )
 
 @auth_router.post("/login", response_model=Token)
 async def login(user_data: UserLogin):
-    """Login with email and password"""
+    """Login with email and password, get an access token for future requests"""
     user = await authenticate_user(user_data.email, user_data.password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.email}, 
+        data={"sub": user.email, "name": user.name, "is_premium": user.is_premium if hasattr(user, "is_premium") else False}, 
         expires_delta=access_token_expires
     )
     
     return Token(
-        access_token=access_token,
-        email=user.email,
-        name=user.name
+        access_token=access_token, 
+        token_type="bearer", 
+        email=user.email, 
+        name=user.name,
+        id=str(user.id) if hasattr(user, "id") else None,
+        is_premium=user.is_premium if hasattr(user, "is_premium") else False
     )
 
 @auth_router.post("/google", response_model=Token)
@@ -493,5 +522,310 @@ async def delete_account(request: Request):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete account: {str(e)}"
+        )
+    
+@auth_router.post("/subscription", response_model=SubscriptionResponse)
+async def create_subscription(subscription_data: SubscriptionRequest, current_user: UserInDB = Depends(get_current_user)):
+    """Create a new subscription for the user"""
+    try:
+        users = get_user_collection()
+        
+        # Generate a subscription ID
+        subscription_id = str(uuid.uuid4())
+        
+        # Set subscription dates
+        start_date = datetime.utcnow()
+        
+        # Default to monthly subscription (30 days)
+        days_to_add = 30
+        if subscription_data.subscription_plan == "yearly":
+            days_to_add = 365
+            
+        end_date = start_date + timedelta(days=days_to_add)
+        
+        # Handle Apple Pay receipt verification
+        verified = False
+        if subscription_data.payment_method == "apple_pay" and subscription_data.receipt_data:
+            # In a real implementation, you would verify the receipt with Apple's servers
+            # For now, we'll simulate a successful verification
+            verified = True
+            
+            # Example of how to verify with Apple (pseudo-code):
+            # response = await httpx.post(
+            #     "https://sandbox.itunes.apple.com/verifyReceipt",  # Use production URL in production
+            #     json={"receipt-data": subscription_data.receipt_data}
+            # )
+            # if response.status_code == 200:
+            #     receipt_info = response.json()
+            #     if receipt_info.get("status") == 0:  # 0 means success
+            #         verified = True
+        else:
+            # For testing purposes, consider any other payment method as verified
+            verified = True
+        
+        if not verified:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Payment verification failed"
+            )
+        
+        # Update user with subscription information
+        update_result = await users.update_one(
+            {"email": current_user.email},
+            {
+                "$set": {
+                    "is_premium": True,
+                    "subscription_id": subscription_id,
+                    "subscription_start_date": start_date,
+                    "subscription_end_date": end_date,
+                    "subscription_status": "active",
+                    "payment_method": subscription_data.payment_method
+                }
+            }
+        )
+        
+        if update_result.modified_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update subscription information"
+            )
+        
+        return SubscriptionResponse(
+            is_premium=True,
+            subscription_id=subscription_id,
+            subscription_start_date=start_date,
+            subscription_end_date=end_date,
+            subscription_status="active",
+            message="Subscription created successfully"
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating subscription: {str(e)}"
+        )
+
+@auth_router.get("/subscription", response_model=SubscriptionResponse)
+async def get_subscription(current_user: UserInDB = Depends(get_current_user)):
+    """Get the user's current subscription status"""
+    try:
+        # Check if user has subscription information
+        if not hasattr(current_user, "is_premium") or not current_user.is_premium:
+            return SubscriptionResponse(
+                is_premium=False,
+                message="User does not have an active subscription"
+            )
+        
+        # Check if subscription has expired
+        if hasattr(current_user, "subscription_end_date") and current_user.subscription_end_date:
+            if current_user.subscription_end_date < datetime.utcnow():
+                # Subscription has expired, update user record
+                users = get_user_collection()
+                await users.update_one(
+                    {"email": current_user.email},
+                    {
+                        "$set": {
+                            "is_premium": False,
+                            "subscription_status": "expired"
+                        }
+                    }
+                )
+                
+                return SubscriptionResponse(
+                    is_premium=False,
+                    subscription_id=current_user.subscription_id,
+                    subscription_start_date=current_user.subscription_start_date,
+                    subscription_end_date=current_user.subscription_end_date,
+                    subscription_status="expired",
+                    message="Subscription has expired"
+                )
+        
+        # Return active subscription details
+        return SubscriptionResponse(
+            is_premium=current_user.is_premium,
+            subscription_id=current_user.subscription_id if hasattr(current_user, "subscription_id") else None,
+            subscription_start_date=current_user.subscription_start_date if hasattr(current_user, "subscription_start_date") else None,
+            subscription_end_date=current_user.subscription_end_date if hasattr(current_user, "subscription_end_date") else None,
+            subscription_status=current_user.subscription_status if hasattr(current_user, "subscription_status") else None,
+            message="Active subscription found"
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving subscription: {str(e)}"
+        )
+
+@auth_router.delete("/subscription", response_model=SubscriptionResponse)
+async def cancel_subscription(current_user: UserInDB = Depends(get_current_user)):
+    """Cancel the user's subscription"""
+    try:
+        users = get_user_collection()
+        
+        # Check if user has an active subscription
+        if not hasattr(current_user, "is_premium") or not current_user.is_premium:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User does not have an active subscription to cancel"
+            )
+        
+        # Update user record to cancel subscription
+        update_result = await users.update_one(
+            {"email": current_user.email},
+            {
+                "$set": {
+                    "subscription_status": "canceled"
+                    # Note: We're not setting is_premium to False immediately
+                    # The user can continue to use premium features until the end date
+                }
+            }
+        )
+        
+        if update_result.modified_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to cancel subscription"
+            )
+        
+        return SubscriptionResponse(
+            is_premium=True,  # Still premium until end date
+            subscription_id=current_user.subscription_id if hasattr(current_user, "subscription_id") else None,
+            subscription_start_date=current_user.subscription_start_date if hasattr(current_user, "subscription_start_date") else None,
+            subscription_end_date=current_user.subscription_end_date if hasattr(current_user, "subscription_end_date") else None,
+            subscription_status="canceled",
+            message="Subscription has been canceled but will remain active until the end date"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error canceling subscription: {str(e)}"
+        )
+    
+@auth_router.post("/apple", response_model=Token)
+async def apple_auth(request: Request):
+    """Handle Apple OAuth authentication"""
+    try:
+        # Get raw request data
+        raw_data = await request.json()
+        print(f"Apple auth - received raw data: {raw_data}")
+        
+        # Extract identity token from request data - handle both field naming conventions
+        identity_token = raw_data.get('identity_token') or raw_data.get('identityToken')
+        if not identity_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing identity token in request"
+            )
+            
+        # Extract optional full name data
+        full_name = raw_data.get('full_name') or raw_data.get('fullName')
+        
+        # Verify the identity token with Apple
+        # In a production environment, you should verify the token with Apple's servers
+        # For now, we'll extract the user info from the token
+        
+        # Parse the identity token (JWT)
+        try:
+            # Split the token into header, payload, and signature
+            header, payload, signature = identity_token.split('.')
+            
+            # Decode the payload
+            # Add padding if needed
+            payload += '=' * ((4 - len(payload) % 4) % 4)
+            decoded_payload = json.loads(base64.b64decode(payload).decode('utf-8'))
+            
+            print(f"Decoded Apple token payload: {decoded_payload}")
+            
+            # Extract user info
+            apple_user_id = decoded_payload.get('sub')
+            email = decoded_payload.get('email')
+            
+            if not apple_user_id or not email:
+                print(f"Invalid Apple token: missing sub({apple_user_id}) or email({email})")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid Apple identity token"
+                )
+                
+        except Exception as e:
+            print(f"Exception parsing Apple token: {e}")
+            print(f"Token format: {identity_token[:20]}...")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Failed to parse Apple identity token: {str(e)}"
+            )
+        
+        # Check if user exists in our database
+        users = get_user_collection()
+        existing_user = await users.find_one({"email": email})
+        
+        if existing_user:
+            # User exists, create a token
+            user_id = str(existing_user["_id"])
+            user_name = existing_user.get("name", "")
+            is_premium = existing_user.get("is_premium", False)
+        else:
+            # Create a new user
+            # Use the name from the request if provided
+            name = ""
+            if full_name:
+                name_parts = []
+                if full_name.get("givenName"):
+                    name_parts.append(full_name.get("givenName"))
+                if full_name.get("familyName"):
+                    name_parts.append(full_name.get("familyName"))
+                name = " ".join(name_parts)
+            
+            # If name is still empty, use email as name
+            if not name:
+                name = email.split('@')[0]
+                
+            # Create user document
+            user_dict = {
+                "email": email,
+                "name": name,
+                "apple_user_id": apple_user_id,
+                "created_at": datetime.utcnow(),
+                "disclaimer_accepted": True,  # Always set disclaimer as accepted for Apple sign-in
+                "is_premium": False
+            }
+            
+            print(f"Creating new user via Apple Sign-In with disclaimer_accepted=True: {email}")
+            
+            # Insert the user
+            result = await users.insert_one(user_dict)
+            user_id = str(result.inserted_id)
+            user_name = name
+            is_premium = False
+        
+        # Create access token
+        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": email, "name": user_name, "is_premium": is_premium},
+            expires_delta=access_token_expires
+        )
+        
+        # Return token and user info
+        return Token(
+            access_token=access_token,
+            token_type="bearer",
+            email=email,
+            name=user_name,
+            id=user_id,
+            is_premium=is_premium
+        )
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Log the error
+        print(f"Error in Apple authentication: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to authenticate with Apple: {str(e)}"
         )
     

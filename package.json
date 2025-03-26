@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@react-native-community/blur": "^4.4.1",
+    "expo-blur": "^14.0.3",
+    "react-native-blur": "^3.2.2",
+    "expo-linear-gradient": "~14.0.2"
+  }
+}

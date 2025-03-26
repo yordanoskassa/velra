@@ -1,6 +1,8 @@
 import axios from 'axios';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getNewsApiUrl } from './config';
 
 // Helper function to extract impact values from raw text
 const extractImpactValue = (impactText, assetType) => {
@@ -14,250 +16,552 @@ const extractImpactValue = (impactText, assetType) => {
 
 // Helper function to create fallback insights when parsing fails
 const createFallbackInsights = () => {
+  console.log('Creating fallback insights');
   return {
     key_points: [
-      "Unable to parse detailed insights from the AI response.",
-      "Consider reviewing the article manually for market implications.",
-      "The system is still learning to analyze this type of content."
+      "Unable to generate insights for this article.",
+      "Please read the full article for more information."
     ],
     potential_impact: {
-      stocks: "Impact analysis unavailable",
-      commodities: "Impact analysis unavailable",
-      forex: "Impact analysis unavailable"
+      stocks: {
+        description: "Without full analysis, we cannot determine specific impacts on stock markets.",
+        impact_level: "low"
+      },
+      commodities: {
+        description: "Without full analysis, we cannot determine specific impacts on commodity markets.",
+        impact_level: "low"
+      },
+      forex: {
+        description: "Without full analysis, we cannot determine specific impacts on forex markets.",
+        impact_level: "low"
+      }
     },
-    recommended_actions: ["Review article manually"],
-    confidence_score: 50
+    recommended_actions: [
+      "Read the full article for more details",
+      "Consider the broader market context when evaluating this news"
+    ],
+    confidence_score: 20,
+    fallback: true
   };
 };
 
-// Get the API URL from environment variables or use a default
-const API_URL = Constants.expoConfig?.extra?.apiUrl || 'http://localhost:8000';
-
-// For iOS simulator, we need to use 127.0.0.1 instead of localhost
-const getApiUrl = () => {
-  // If we're on iOS simulator, replace localhost with the special IP for simulator
-  if (Platform.OS === 'ios' && API_URL.includes('localhost')) {
-    return API_URL.replace('localhost', '127.0.0.1');
-  }
-  return API_URL;
-};
-
-// Create axios instance
-const apiClient = axios.create({
-  baseURL: getApiUrl(),
-  headers: {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json'
-  },
-  timeout: 10000, // 10 second timeout
+// Create an Axios instance with the API URL
+const api = axios.create({
+  baseURL: getNewsApiUrl(),
 });
 
-// Get all news headlines
-export const getNewsHeadlines = async () => {
-  try {
-    const response = await apiClient.get('/news/api/news');
-    console.log('API Response:', response.data);
-    
-    // Validate response structure
-    if (!response.data) {
-      throw new Error('Invalid response format from news API');
-    }
-    
-    // Check if response.data has articles property and it's an array
-    if (response.data.articles && Array.isArray(response.data.articles)) {
-      // Add unique IDs to each article if they don't have one
-      const articlesWithIds = response.data.articles.map((article, index) => ({
-        ...article,
-        id: article.id || article.url || `article-${Date.now()}-${index}`
-      }));
-      
-      return articlesWithIds;
-    } else if (Array.isArray(response.data)) {
-      // If response.data is already an array, add IDs if needed
-      const articlesWithIds = response.data.map((article, index) => ({
-        ...article,
-        id: article.id || article.url || `article-${Date.now()}-${index}`
-      }));
-      
-      return articlesWithIds;
+// Add request interceptor for authentication and logging
+api.interceptors.request.use(
+  async config => {
+    // Add JWT token to Authorization header if available
+    const token = await AsyncStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+      console.log('Adding auth token to request');
     } else {
-      throw new Error('Invalid response format: expected articles array');
+      console.log('No auth token available');
     }
-  } catch (error) {
-    console.error('News API Error:', error);
+    
+    console.log(`API Request: ${config.method.toUpperCase()} ${config.baseURL}${config.url}`);
+    return config;
+  },
+  error => {
+    console.error('API Request Error:', error);
+    return Promise.reject(error);
+  }
+);
+
+// Add response interceptor for logging and handling auth errors
+api.interceptors.response.use(
+  response => {
+    console.log(`API Response: ${response.status} ${response.config.method.toUpperCase()} ${response.config.url}`);
+    return response;
+  },
+  error => {
     if (error.response) {
-      // The request was made and the server responded with a status code
-      // that falls out of the range of 2xx
-      throw new Error(error.response.data.detail || 'Server error');
+      console.error(`API Error Response: ${error.response.status} ${error.config.method.toUpperCase()} ${error.config.url}`);
+      
+      // If we get a 401 Unauthorized, the token might have expired
+      if (error.response.status === 401) {
+        console.log('Received 401 Unauthorized - token may have expired');
+        // We could trigger a logout or token refresh here
+        // For now, we'll just clear the token from storage
+        AsyncStorage.removeItem('token').then(() => {
+          console.log('Cleared expired token from storage');
+        });
+      }
     } else if (error.request) {
-      // The request was made but no response was received
-      throw new Error('No response from server');
+      console.error('API No Response:', error.request);
     } else {
-      // Something happened in setting up the request that triggered an Error
-      throw new Error(error.message || 'Failed to fetch news headlines');
+      console.error('API Error:', error.message);
+    }
+    return Promise.reject(error);
+  }
+);
+
+/**
+ * Get news headlines
+ * @param {Object} params - Query parameters
+ * @returns {Promise} - Promise with news headlines
+ */
+export const getNewsHeadlines = async (params = {}) => {
+  try {
+    console.log('Fetching news headlines from:', getNewsApiUrl());
+    console.log('Full URL:', `${getNewsApiUrl()}/api/news`);
+    
+    // The baseURL already includes '/news', so we just need '/api/news'
+    const response = await api.get('/api/news', { params });
+    console.log('News API response status:', response.status);
+    console.log('News API response data:', response.data);
+    
+    // Process the response to ensure it's in the expected format
+    let processedData = response.data;
+    
+    // If the response is an object with an 'articles' property (standard NewsAPI format)
+    if (processedData && processedData.articles) {
+      console.log('Standard NewsAPI format detected');
+      return processedData;
+    }
+    
+    // If the response is an array, wrap it in an object with 'articles' property
+    if (Array.isArray(processedData)) {
+      console.log('Array format detected, wrapping in articles object');
+      return { articles: processedData };
+    }
+    
+    // If the response is an object but not in the expected format
+    if (processedData && typeof processedData === 'object') {
+      console.log('Object format detected, looking for articles array');
+      
+      // Try to find an array property that might contain the articles
+      const possibleArrayProps = Object.keys(processedData).filter(key => 
+        Array.isArray(processedData[key]) && processedData[key].length > 0
+      );
+      
+      if (possibleArrayProps.length > 0) {
+        // Use the first array property found
+        const arrayProp = possibleArrayProps[0];
+        console.log(`Using data from '${arrayProp}' property`);
+        return { articles: processedData[arrayProp] };
+      }
+    }
+    
+    // If we couldn't process the data, return it as is
+    console.log('Could not process data into standard format, returning as is');
+    return processedData;
+  } catch (error) {
+    console.error('Error fetching news headlines:', error);
+    
+    if (error.response) {
+      console.error('Error response data:', error.response.data);
+      console.error('Error response status:', error.response.status);
+      console.error('Error response headers:', error.response.headers);
+      throw new Error(error.response.data.detail || 'Failed to fetch news headlines');
+    } else if (error.request) {
+      console.error('No response received:', error.request);
+      throw new Error('No response from server. Please check your internet connection.');
+    } else {
+      console.error('Error setting up request:', error.message);
+      throw new Error('Error setting up request: ' + error.message);
     }
   }
 };
 
-// Get market insights for a specific article
+/**
+ * Get market insights for an article
+ * @param {Object|string} article - Article object or ID
+ * @returns {Promise} - Promise with market insights
+ */
 export const getMarketInsights = async (article) => {
-  try {
-    console.log('Sending article to insights API:', article);
-    
-    // Validate article data before sending
-    if (!article.title || !article.content) {
-      console.error('Invalid article data:', article);
-      throw new Error('Article must have title and content');
-    }
-    
-    // Ensure content is at least 100 characters
-    if (article.content.length < 100) {
-      console.warn('Article content too short, padding content');
-      article.content += ' '.repeat(100 - article.content.length);
-    }
-    
-    const response = await apiClient.post(
-      `/news/api/market-insights/article`,
-      article,
-      {
-        timeout: 15000,
-        headers: {
-          "Content-Type": "application/json"
+  // Maximum number of retries
+  const MAX_RETRIES = 3;
+  let retryCount = 0;
+  
+  // Function to add a delay between retries
+  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  
+  // Retry loop
+  while (retryCount < MAX_RETRIES) {
+    try {
+      console.log(`Getting market insights for article (attempt ${retryCount + 1}/${MAX_RETRIES}):`, 
+        typeof article === 'object' ? article.title : article);
+      
+      // If article is a string, assume it's an ID
+      if (typeof article === 'string') {
+        console.log('Article is an ID, fetching insights by ID');
+        // The baseURL already includes '/news', so we just need '/api/insights/{article}'
+        const response = await api.get(`/api/insights/${article}`);
+        console.log('API response for article ID:', response.data);
+        return response.data;
+      }
+      
+      // Ensure article content is not empty and has minimum length
+      if (!article.content || article.content.trim().length < 100) {
+        console.log('Article content is too short, adding default content');
+        const defaultContent = 
+          "This article discusses important market trends and financial news that could impact investment decisions. " +
+          "The content provides analysis of current economic conditions and potential future developments. " +
+          "Readers should consider this information as part of their broader research process.";
+        
+        if (!article.content) {
+          article.content = defaultContent;
+        } else {
+          // Append to existing content if it's too short
+          article.content = article.content + " " + defaultContent;
         }
       }
-    );
-
-    console.log('Insights API response status:', response.status);
-    
-    if (response.status === 200) {
-      // Check if response.data is valid
+      
+      // If article is an object, send it to the insights endpoint
+      console.log('Article is an object, sending to insights endpoint');
+      console.log('Content length:', article.content.length);
+      console.log('Article data being sent:', {
+        title: article.title,
+        contentLength: article.content.length,
+        source: article.source,
+        publishedAt: article.publishedAt
+      });
+      
+      // The baseURL already includes '/news', so we just need '/api/market-insights/article'
+      const response = await api.post('/api/market-insights/article', article);
+      
+      console.log('Raw API response:', typeof response.data, response.data ? 'Has data' : 'No data');
+      
+      // If we received null or undefined, create a fallback
       if (!response.data) {
-        throw new Error('Empty response data');
+        console.error('Received null or undefined response from API');
+        if (retryCount < MAX_RETRIES - 1) {
+          retryCount++;
+          console.log(`Retrying due to null response (${retryCount}/${MAX_RETRIES})...`);
+          await delay(1000 * retryCount);
+          continue;
+        }
+        return createFallbackInsights();
       }
       
-      // Handle case where response.data might contain error information
-      if (response.data.error) {
-        console.error('API returned error:', response.data.error);
-        throw new Error(response.data.error);
+      // Check if the response contains valid insights
+      if (response.data && response.data.key_points) {
+        console.log('Received valid insights from API with key_points');
+        return response.data;
       }
       
-      // If the response contains raw_response, it means the JSON parsing failed on the backend
-      if (response.data.raw_response) {
-        console.log('Raw response from API:', response.data.raw_response);
+      // If the response has an error field, log it
+      if (response.data && response.data.error) {
+        console.error('API returned an error:', response.data.error);
         
-        // Try to parse the raw response ourselves
-        try {
-          // First, try to find JSON-like content in the raw response
-          const jsonMatch = response.data.raw_response.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            try {
-              const parsedData = JSON.parse(jsonMatch[0]);
-              
-              // Validate the parsed data structure
-              const validatedData = {
-                key_points: Array.isArray(parsedData.key_points) 
-                  ? parsedData.key_points 
-                  : typeof parsedData.key_points === 'string'
-                    ? [parsedData.key_points]
-                    : ["No key points available"],
-                    
-                potential_impact: parsedData.potential_impact || {
-                  stocks: "Impact analysis unavailable",
-                  commodities: "Impact analysis unavailable",
-                  forex: "Impact analysis unavailable"
-                },
-                
-                recommended_actions: Array.isArray(parsedData.recommended_actions)
-                  ? parsedData.recommended_actions
-                  : typeof parsedData.recommended_actions === 'string'
-                    ? [parsedData.recommended_actions]
-                    : ["Review article manually"],
-                    
-                confidence_score: typeof parsedData.confidence_score === 'number'
-                  ? parsedData.confidence_score
-                  : 50
-              };
-              
-              return validatedData;
-            } catch (innerParseError) {
-              console.error('Failed to parse extracted JSON:', innerParseError);
-              // Continue to fallback
+        // If the error response contains key_points, it's still usable
+        if (response.data.key_points && Array.isArray(response.data.key_points)) {
+          console.log('Using error response with key_points as fallback');
+          return response.data;
+        }
+        
+        // Try to parse the raw response if available
+        if (response.data.raw_response) {
+          console.log('Attempting to extract insights from raw_response');
+          try {
+            // Try to extract JSON from the raw response
+            const jsonMatch = response.data.raw_response.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              const extractedJson = JSON.parse(jsonMatch[0]);
+              console.log('Successfully extracted JSON from raw response');
+              if (extractedJson.key_points) {
+                return extractedJson;
+              }
             }
+          } catch (parseError) {
+            console.error('Failed to parse raw response:', parseError);
           }
-          
-          // If we couldn't extract valid JSON, try to parse the content manually
-          // Look for key points in the text
-          const keyPointsMatch = response.data.raw_response.match(/key_points["\s:]+\[(.*?)\]/s);
-          const impactMatch = response.data.raw_response.match(/potential_impact["\s:]+\{(.*?)\}/s);
-          const actionsMatch = response.data.raw_response.match(/recommended_actions["\s:]+\[(.*?)\]/s);
-          const confidenceMatch = response.data.raw_response.match(/confidence_score["\s:]+(\d+)/);
-          
-          // Create a structured response from the extracted data
-          const extractedData = {
-            key_points: keyPointsMatch 
-              ? keyPointsMatch[1].split(',').map(point => 
-                  point.trim().replace(/^["']|["']$/g, ''))
-              : ["Unable to extract key points from the AI response"],
-              
-            potential_impact: {
-              stocks: extractImpactValue(impactMatch ? impactMatch[1] : '', 'stocks'),
-              commodities: extractImpactValue(impactMatch ? impactMatch[1] : '', 'commodities'),
-              forex: extractImpactValue(impactMatch ? impactMatch[1] : '', 'forex')
-            },
-            
-            recommended_actions: actionsMatch
-              ? actionsMatch[1].split(',').map(action => 
-                  action.trim().replace(/^["']|["']$/g, ''))
-              : ["Review article manually"],
-              
-            confidence_score: confidenceMatch ? parseInt(confidenceMatch[1], 10) : 50
-          };
-          
-          return extractedData;
-        } catch (parseError) {
-          console.error('Failed to parse raw response:', parseError);
-          
-          // Return a fallback structure with key points
-          return createFallbackInsights();
         }
       }
       
-      // For properly formatted responses, ensure all required fields are present
-      return {
-        key_points: Array.isArray(response.data.key_points) 
-          ? response.data.key_points 
-          : typeof response.data.key_points === 'string'
-            ? [response.data.key_points]
-            : [],
-            
-        potential_impact: response.data.potential_impact || {
-          stocks: "Impact analysis unavailable",
-          commodities: "Impact analysis unavailable",
-          forex: "Impact analysis unavailable"
-        },
-        
-        recommended_actions: Array.isArray(response.data.recommended_actions)
-          ? response.data.recommended_actions
-          : typeof response.data.recommended_actions === 'string'
-            ? [response.data.recommended_actions]
-            : [],
-            
-        confidence_score: typeof response.data.confidence_score === 'number'
-          ? response.data.confidence_score
-          : 75
-      };
+      // Additional logging for unexpected response formats
+      console.error('Unexpected response format:', JSON.stringify(response.data, null, 2));
+      
+      // If we got a response but it doesn't have valid insights, retry
+      if (retryCount < MAX_RETRIES - 1) {
+        retryCount++;
+        console.log(`Retrying insights generation (${retryCount}/${MAX_RETRIES})...`);
+        await delay(1000 * retryCount); // Exponential backoff
+        continue;
+      }
+      
+      // If all retries failed, return fallback insights
+      console.log('All retries failed, creating fallback insights');
+      return createFallbackInsights();
+      
+    } catch (error) {
+      console.error(`Error getting market insights (attempt ${retryCount + 1}/${MAX_RETRIES}):`, error);
+      
+      if (error.response) {
+        console.error('Error response status:', error.response.status);
+        console.error('Error response data:', JSON.stringify(error.response.data, null, 2));
+      }
+      
+      // If we still have retries left, try again
+      if (retryCount < MAX_RETRIES - 1) {
+        retryCount++;
+        const retryDelay = 1000 * retryCount; // Exponential backoff
+        console.log(`Retrying after error in ${retryDelay}ms (${retryCount}/${MAX_RETRIES})...`);
+        await delay(retryDelay);
+        continue;
+      }
+      
+      // If all retries failed, return fallback insights
+      console.log('All retries failed after error, creating fallback insights');
+      return createFallbackInsights();
     }
+  }
+  
+  // This should never be reached, but just in case
+  return createFallbackInsights();
+};
 
-    throw new Error(response.data.detail || 'Failed to generate insights');
-
+/**
+ * Save an article for the current user
+ * @param {string} articleId - ID of the article to save
+ * @returns {Promise} - Promise with the result of the operation
+ */
+export const saveArticle = async (articleId) => {
+  try {
+    console.log(`API: Saving article with ID: ${articleId}`);
+    
+    // Check if the article ID is valid
+    if (!articleId) {
+      console.error('Cannot save article: Invalid article ID');
+      throw new Error('Cannot save article with an invalid ID');
+    }
+    
+    // Get auth token for logging purposes
+    const token = await AsyncStorage.getItem('token');
+    if (!token) {
+      console.error('API: No authentication token available');
+      throw new Error('Authentication required. Please log in again.');
+    }
+    
+    console.log(`API: Auth token available, proceeding with save`);
+    
+    // Make the request to save the article
+    const response = await api.post(`/api/save-article/${articleId}`);
+    console.log(`API: Save article response status: ${response.status}`);
+    console.log(`API: Save article response data:`, response.data);
+    
+    return response.data;
   } catch (error) {
-    console.error('Insights API Error:', error);
+    console.error(`API: Error saving article ${articleId}:`, error);
+    
+    // Log detailed error information for debugging
     if (error.response) {
-      throw new Error(error.response.data.detail || 'Server error');
+      console.error(`API: Error response:`, error.response.data);
+      console.error(`API: Error status:`, error.response.status);
     } else if (error.request) {
-      throw new Error('No response from insights server');
+      console.error(`API: No response received:`, error.request);
     } else {
-      throw new Error(error.message || 'Insights service unavailable');
+      console.error(`API: Error setting up request:`, error.message);
     }
+    
+    // Provide more detailed error messages
+    if (error.response) {
+      if (error.response.status === 401) {
+        throw new Error('Authentication required. Please log in again.');
+      } else if (error.response.status === 404) {
+        throw new Error('Article not found. It may have been removed.');
+      } else {
+        throw new Error(error.response.data?.detail || `Error ${error.response.status}: Failed to save article`);
+      }
+    }
+    
+    throw error;
+  }
+};
+
+/**
+ * Unsave (remove) an article for the current user
+ * @param {string} articleId - ID of the article to unsave
+ * @returns {Promise} - Promise with the result of the operation
+ */
+export const unsaveArticle = async (articleId) => {
+  try {
+    console.log(`API: Unsaving article with ID: ${articleId}`);
+    
+    // Check if the article ID is valid
+    if (!articleId) {
+      console.error('Cannot unsave article: Invalid article ID');
+      throw new Error('Cannot unsave article with an invalid ID');
+    }
+    
+    // Get auth token for logging purposes
+    const token = await AsyncStorage.getItem('token');
+    if (!token) {
+      console.error('API: No authentication token available');
+      throw new Error('Authentication required. Please log in again.');
+    }
+    
+    console.log(`API: Auth token available, proceeding with unsave`);
+    
+    // Make the request to unsave the article
+    const response = await api.delete(`/api/save-article/${articleId}`);
+    console.log(`API: Unsave article response status: ${response.status}`);
+    console.log(`API: Unsave article response data:`, response.data);
+    
+    return response.data;
+  } catch (error) {
+    console.error(`API: Error unsaving article ${articleId}:`, error);
+    
+    // Log detailed error information for debugging
+    if (error.response) {
+      console.error(`API: Error response:`, error.response.data);
+      console.error(`API: Error status:`, error.response.status);
+    } else if (error.request) {
+      console.error(`API: No response received:`, error.request);
+    } else {
+      console.error(`API: Error setting up request:`, error.message);
+    }
+    
+    // Provide more detailed error messages
+    if (error.response) {
+      if (error.response.status === 401) {
+        throw new Error('Authentication required. Please log in again.');
+      } else {
+        throw new Error(error.response.data?.detail || `Error ${error.response.status}: Failed to unsave article`);
+      }
+    }
+    
+    throw error;
+  }
+};
+
+/**
+ * Get all saved articles for the current user
+ * @returns {Promise} - Promise with saved articles
+ */
+export const getSavedArticles = async () => {
+  try {
+    console.log('Fetching saved articles...');
+    const token = await AsyncStorage.getItem('token');
+    
+    if (!token) {
+      console.error('No authentication token available');
+      throw new Error('You must be logged in to view saved articles');
+    }
+    
+    // Log the complete URL and headers being used
+    console.log('Request URL:', `${getNewsApiUrl()}/api/saved-articles`);
+    console.log('Auth token available:', !!token);
+    
+    const response = await api.get('/api/saved-articles');
+    console.log('Saved articles response status:', response.status);
+    console.log('Article count:', response.data?.articles?.length || 0);
+    
+    return response.data;
+  } catch (error) {
+    console.error('Error getting saved articles:', error);
+    
+    if (error.response) {
+      console.error('Error response data:', error.response.data);
+      console.error('Error response status:', error.response.status);
+      
+      // Handle specific error cases
+      if (error.response.status === 401) {
+        throw new Error('Your session has expired. Please log in again.');
+      } else if (error.response.status === 404) {
+        throw new Error('Saved articles feature is not available.');
+      } else {
+        throw new Error(error.response.data.detail || 'Failed to load saved articles');
+      }
+    } else if (error.request) {
+      console.error('No response received:', error.request);
+      throw new Error('No response from server. Please check your internet connection.');
+    } else {
+      console.error('Error setting up request:', error.message);
+      throw error;
+    }
+  }
+};
+
+/**
+ * Check if an article is saved by the current user
+ * @param {string} articleId - ID of the article to check
+ * @returns {Promise<boolean>} - Promise with boolean indicating if the article is saved
+ */
+export const isArticleSaved = async (articleId) => {
+  try {
+    console.log(`API: Checking if article with ID ${articleId} is saved`);
+    
+    // Check if the article ID is valid
+    if (!articleId) {
+      console.warn('Cannot check saved status: Invalid article ID');
+      return false;
+    }
+    
+    // Get auth token for logging purposes
+    const token = await AsyncStorage.getItem('token');
+    console.log(`API: Auth token available: ${!!token}`);
+    
+    // If no token, the article can't be saved
+    if (!token) {
+      console.log('API: No authentication token available, article cannot be saved');
+      return false;
+    }
+    
+    // Make the request to check if the article is saved
+    const response = await api.get(`/api/article-saved/${articleId}`);
+    console.log(`API: Article saved check response status: ${response.status}`);
+    console.log(`API: Article saved status: ${response.data.is_saved}`);
+    
+    return response.data.is_saved;
+  } catch (error) {
+    console.error(`API: Error checking if article ${articleId} is saved:`, error);
+    console.log(`API: Error response:`, error.response?.data);
+    console.log(`API: Error status:`, error.response?.status);
+    
+    // Log but don't throw errors for this function - just return false
+    return false;
+  }
+};
+
+/**
+ * Get weekly picks from the backend
+ * @returns {Promise} - Promise with weekly picks articles
+ */
+export const getWeeklyPicks = async () => {
+  try {
+    console.log('Fetching weekly picks from backend...');
+    const response = await api.get('/api/news/weekly-picks');
+    console.log('Weekly picks response status:', response.status);
+    console.log('Weekly picks count:', response.data?.articles?.length || 0);
+    
+    // If no articles are returned, check if we need to use a different path
+    if (!response.data?.articles || response.data.articles.length === 0) {
+      try {
+        console.log('Trying alternate path for weekly picks...');
+        const altResponse = await api.get('/news/api/news/weekly-picks');
+        console.log('Alternate weekly picks response status:', altResponse.status);
+        console.log('Alternate weekly picks count:', altResponse.data?.articles?.length || 0);
+        return altResponse.data;
+      } catch (altError) {
+        console.log('Alternate path also failed:', altError);
+        // Continue with original response if alternate fails
+      }
+    }
+    
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching weekly picks:', error);
+    if (error.response) {
+      console.error('Error response data:', error.response.data);
+      console.error('Error response status:', error.response.status);
+      
+      // Try alternate path if first attempt fails
+      try {
+        console.log('First path failed, trying alternate path for weekly picks...');
+        const altResponse = await api.get('/news/api/news/weekly-picks');
+        console.log('Alternate weekly picks response status:', altResponse.status);
+        console.log('Alternate weekly picks count:', altResponse.data?.articles?.length || 0);
+        return altResponse.data;
+      } catch (altError) {
+        console.log('Alternate path also failed:', altError);
+        throw new Error(error.response.data.detail || 'Failed to fetch weekly picks');
+      }
+    }
+    throw error;
   }
 };

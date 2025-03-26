@@ -1,161 +1,81 @@
-import React, { useState, useEffect } from 'react';
-import { getNewsHeadlines } from './api/newsService';
-import NewsCard from './components/NewsCard';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useFonts } from 'expo-font';
-import { View, ActivityIndicator, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
+import { Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
+import { Syne_800ExtraBold } from '@expo-google-fonts/syne';
+import { Raleway_400Regular, Raleway_500Medium, Raleway_600SemiBold } from '@expo-google-fonts/raleway';
+import { CourierPrime_400Regular } from '@expo-google-fonts/courier-prime';
+import { NotoSerif_400Regular } from '@expo-google-fonts/noto-serif';
+import { View, ActivityIndicator, StyleSheet, StatusBar, Platform, LogBox } from 'react-native';
+import { NavigationContainer } from '@react-navigation/native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { enableScreens } from 'react-native-screens';
+import { AuthProvider } from './context/AuthContext';
+import { SavedArticlesProvider } from './context/SavedArticlesContext';
+import { ThemeProvider } from './context/ThemeContext';
+import { UsageProvider } from './context/UsageContext';
+import { Provider as PaperProvider } from 'react-native-paper';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import Navigation from './navigation';
+import { lightTheme, darkTheme } from './theme';
+
+// Enable screens for better navigation performance
+enableScreens();
+
+// Ignore specific RN warnings
+LogBox.ignoreLogs([
+  'VirtualizedLists should never be nested',
+  'Sending `onAnimatedValueUpdate` with no listeners registered',
+]);
 
 function App() {
-  const [news, setNews] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
   const [fontsLoaded] = useFonts({
-    'Inter-Regular': require('../assets/fonts/Inter-Regular.ttf'),
-    'Inter-SemiBold': require('../assets/fonts/Inter-SemiBold.ttf'),
-    'Inter-Bold': require('../assets/fonts/Inter-Bold.ttf'),
-    'CourierPrime-Regular': require('../assets/fonts/CourierPrime-Regular.ttf'),
-    'TimesNewRoman': require('../assets/fonts/TimesNewRoman.ttf')
+    'Inter-Regular': Inter_400Regular,
+    'Inter-SemiBold': Inter_600SemiBold,
+    'Inter-Bold': Inter_700Bold,
+    'OldEnglish': Syne_800ExtraBold,
+    'CourierPrime-Regular': CourierPrime_400Regular,
+    'TimesNewRoman': NotoSerif_400Regular,
+    'Raleway-Regular': Raleway_400Regular,
+    'Raleway-Medium': Raleway_500Medium,
+    'Raleway-SemiBold': Raleway_600SemiBold
   });
-
-  useEffect(() => {
-    fetchNews();
-  }, []);
-
-  const fetchNews = async () => {
-    setLoading(true);
-    try {
-      const response = await getNewsHeadlines();
-      console.log('News data received:', response);
-      setNews(response.articles || []);
-      setError(null);
-    } catch (err) {
-      console.error('Error fetching news:', err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   if (!fontsLoaded) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0000ff" />
-      </View>
-    );
-  }
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0000ff" />
-        <Text style={styles.loadingText}>Loading financial news...</Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorTitle}>⚠️ News Feed Unavailable</Text>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity 
-          style={styles.retryButton}
-          onPress={fetchNews}
-        >
-          <Text style={styles.buttonText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  if (news.length === 0) {
-    return (
-      <View style={styles.noNewsContainer}>
-        <Text style={styles.noNewsText}>No financial news available at the moment</Text>
-        <TouchableOpacity 
-          style={styles.retryButton}
-          onPress={fetchNews}
-        >
-          <Text style={styles.buttonText}>Refresh</Text>
-        </TouchableOpacity>
+        <ActivityIndicator size="large" color="#000000" />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <FlatList
-        data={news}
-        keyExtractor={(item) => item.id}
-        renderItem={({item, index}) => (
-          <NewsCard article={item} index={index} />
-        )}
-      />
-    </View>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <PaperProvider>
+            <AuthProvider>
+              <UsageProvider>
+                <SavedArticlesProvider>
+                  <NavigationContainer>
+                    <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+                    <Navigation />
+                  </NavigationContainer>
+                </SavedArticlesProvider>
+              </UsageProvider>
+            </AuthProvider>
+          </PaperProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#fff',
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#666',
-    fontFamily: 'Inter-Regular',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#fff',
-  },
-  errorTitle: {
-    fontSize: 20,
-    fontFamily: 'Inter-Bold',
-    marginBottom: 10,
-    color: '#ff3b30',
-  },
-  errorText: {
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 20,
-    color: '#666',
-    fontFamily: 'Inter-Regular',
-  },
-  retryButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-  },
-  noNewsContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#fff',
-  },
-  noNewsText: {
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 20,
-    color: '#666',
-    fontFamily: 'Inter-Regular',
   }
 });
 

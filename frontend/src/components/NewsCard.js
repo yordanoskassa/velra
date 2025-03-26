@@ -1,8 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, TouchableOpacity, View, Image, ActivityIndicator, Animated, Easing } from 'react-native';
+import { StyleSheet, TouchableOpacity, View, Image, ActivityIndicator, Animated, Easing, Alert } from 'react-native';
 import { Card, Title, Paragraph, Text, useTheme, Surface, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import PropTypes from 'prop-types';
+import { useAuth } from '../context/AuthContext';
+import { useSavedArticles } from '../context/SavedArticlesContext';
+import { useNavigation } from '@react-navigation/native';
+import { useUsage } from '../context/UsageContext';
+import { useSubscription } from '../context/SubscriptionContext';
 
 // Try to import Lottie, but don't crash if it fails
 let LottieView;
@@ -22,6 +27,7 @@ const LoadingSpinner = () => {
   const spinValueReverse = useRef(new Animated.Value(0)).current;
   const spinValueSlow = useRef(new Animated.Value(0)).current;
   const pulseValue = useRef(new Animated.Value(1)).current;
+  const opacityValue = useRef(new Animated.Value(0.3)).current;
 
   useEffect(() => {
     const startSpinning = () => {
@@ -72,6 +78,24 @@ const LoadingSpinner = () => {
           })
         ])
       ).start();
+      
+      // Opacity pulsating animation
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(opacityValue, {
+            toValue: 1,
+            duration: 800,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          }),
+          Animated.timing(opacityValue, {
+            toValue: 0.3,
+            duration: 800,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          })
+        ])
+      ).start();
     };
     startSpinning();
 
@@ -81,6 +105,7 @@ const LoadingSpinner = () => {
       spinValueReverse.setValue(0);
       spinValueSlow.setValue(0);
       pulseValue.setValue(1);
+      opacityValue.setValue(0.3);
     };
   }, []);
 
@@ -124,10 +149,7 @@ const LoadingSpinner = () => {
           styles.spinnerCenter,
           {
             transform: [{ scale: pulseValue }],
-            opacity: pulseValue.interpolate({
-              inputRange: [1, 1.2],
-              outputRange: [1, 0.6]
-            })
+            opacity: opacityValue
           }
         ]}
       >
@@ -137,35 +159,88 @@ const LoadingSpinner = () => {
   );
 };
 
-const NewsCard = ({ article, onPress, index = 0 }) => {
+// Alternating loading messages
+const loadingMessages = [
+  "Analyzing market impact...",
+  "Processing quantitative data...",
+  "Evaluating financial trends...",
+  "Assessing market conditions...",
+  "Calculating potential effects..."
+];
+
+// Add a SubscriptionPrompt component
+const SubscriptionPrompt = ({ onSubscribe }) => {
+  return (
+    <View style={styles.subscriptionPromptContainer}>
+      <Text style={styles.subscriptionPromptTitle}>
+        You've reached your free insight limit
+      </Text>
+      <Text style={styles.subscriptionPromptText}>
+        Subscribe to DECODR PRO to unlock unlimited AI-powered market insights and premium features.
+      </Text>
+      <TouchableOpacity style={styles.subscribeButton} onPress={onSubscribe}>
+        <Text style={styles.subscribeButtonText}>Subscribe Now</Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
+
+const NewsCard = ({ article, onPress, index = 0, isSavedScreen = false, onSaveToggle = null }) => {
   // Validate article data
   if (!article) {
-    console.warn('Article is undefined or null');
-    return (
-      <View style={styles.cardContainer}>
-        <Text>Invalid article data</Text>
-      </View>
-    );
-  }
-  
-  // Ensure article has an ID and title
-  if (!article.id || !article.title) {
-    console.warn('Invalid article data:', article);
-    return (
-      <View style={styles.cardContainer}>
-        <Text>Invalid article format: missing ID or title</Text>
-      </View>
-    );
+    console.warn('NewsCard received invalid article data');
+    return null;
   }
 
+  // Safe article object that won't cause crashes when properties are accessed
+  const safeArticle = {
+    id: article.id || `article-${index}`,
+    title: article.title || 'Untitled Article',
+    summary: article.description || article.summary || article.content || '',
+    url: article.url || '',
+    publishedAt: article.publishedAt || new Date().toISOString(),
+    imageUrl: article.urlToImage || article.imageUrl || null,
+    source: article.source || { name: 'Unknown' },
+  };
+
   const theme = useTheme();
+  const navigation = useNavigation();
+  const { user } = useAuth();
+  const { isSubscribed, showCustomPaywall } = useSubscription();
+  const { isArticleSaved, saveArticle, unsaveArticle } = useSavedArticles();
+  
+  // Safely access the usage context with fallbacks
+  let usageContext;
+  try {
+    usageContext = useUsage();
+  } catch (error) {
+    // Create fallback functions if useUsage fails
+    usageContext = {
+      trackInsightView: async () => ({ showPaywall: false }),
+      trackArticleSave: async () => ({ showPaywall: false }),
+      shouldShowRandomPaywall: () => false
+    };
+    console.log('Usage context not available, using fallbacks');
+  }
+  
+  // Destructure with fallbacks
+  const { 
+    trackInsightView = async () => ({ showPaywall: false }), 
+    trackArticleSave = async () => ({ showPaywall: false }), 
+    shouldShowRandomPaywall = () => false 
+  } = usageContext || {};
+  
   const [expanded, setExpanded] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [insights, setInsights] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [insightLoaded, setInsightLoaded] = useState(false);
   const [error, setError] = useState(null);
-  const [lottieError, setLottieError] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [imageError, setImageError] = useState(false);
+  const [showPaywall, setShowPaywall] = useState(false);
+  const [paywallRequiresLogin, setPaywallRequiresLogin] = useState(false);
+  const [loadingMessageIndex, setLoadingMessageIndex] = useState(
+    Math.floor(Math.random() * loadingMessages.length)
+  );
   
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -208,7 +283,7 @@ const NewsCard = ({ article, onPress, index = 0 }) => {
     ]).start();
 
     // Reset lottie error state
-    setLottieError(false);
+    setInsightLoaded(false);
     
     // Start pulse animation
     const startPulseAnimation = () => {
@@ -226,13 +301,13 @@ const NewsCard = ({ article, onPress, index = 0 }) => {
           easing: Easing.inOut(Easing.quad),
         })
       ]).start(() => {
-        if (loading) {
+        if (generating) {
           startPulseAnimation();
         }
       });
     };
     
-    if (loading) {
+    if (generating) {
       startPulseAnimation();
       
       // Start shimmer animation
@@ -255,38 +330,85 @@ const NewsCard = ({ article, onPress, index = 0 }) => {
       pulseAnim.setValue(1);
       shimmerAnim.setValue(0);
     };
-  }, [loading]);
+  }, [generating]);
+
+  // Add code to rotate through messages while generating
+  useEffect(() => {
+    if (generating) {
+      const interval = setInterval(() => {
+        setLoadingMessageIndex(prevIndex => (prevIndex + 1) % loadingMessages.length);
+      }, 2000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [generating]);
+
+  // Check if the article is saved
+  useEffect(() => {
+    const checkSavedStatus = async () => {
+      if (user && article && article.id) {
+        try {
+          const isSaved = await isArticleSaved(article.id);
+          setSaved(isSaved);
+        } catch (error) {
+          console.error('Error checking saved status:', error);
+        }
+      } else {
+        setSaved(false);
+      }
+    };
+
+    checkSavedStatus();
+  }, [user, article]);
 
   const toggleExpand = async () => {
-    // Animate the chevron rotation
-    Animated.timing(rotateAnim, {
-      toValue: expanded ? 0 : 1,
-      duration: 300,
-      useNativeDriver: true,
-      easing: Easing.inOut(Easing.quad),
-    }).start();
-  
-    if (expanded) {
-      setExpanded(false);
-      return;
+    if (!expanded) {
+      // Generate insights when expanding
+      if (!insights && !error) {
+        // Check if the user has exceeded their free insights limit
+        if (!isSubscribed) {
+          console.log('Tracking insight usage before generating insight...');
+          const { showPaywall, requireLogin } = await trackInsightView();
+          
+          if (showPaywall) {
+            console.log('User has reached insight limit, showing paywall');
+            setPaywallRequiresLogin(requireLogin);
+            // Use the real DECODR PRO paywall
+            showCustomPaywall(navigation);
+            return;
+          }
+        }
+        
+        // Also show random paywalls occasionally during scrolling
+        if (shouldShowRandomPaywall()) {
+          setPaywallRequiresLogin(false);
+          // Use the real DECODR PRO paywall
+          showCustomPaywall(navigation);
+          return;
+        }
+        
+        // Generate insights
+        generateInsights();
+      }
     }
+    
+    // Toggle expanded state
+    setExpanded(!expanded);
+  };
   
-    // Open expanded view
-    setExpanded(true);
-  
-    if (insights) return; // Don't fetch if insights already exist
-  
+  const generateInsights = async () => {
     try {
-      setLoading(true);
+      setGenerating(true);
       setError(null);
+      setInsightLoaded(false);
   
       Animated.timing(progressAnim, {
-        toValue: 0.7, // Animate progress bar to 70%
+        toValue: 0.3, 
         duration: 1000,
         useNativeDriver: false,
         easing: Easing.out(Easing.quad),
       }).start();
-  
+      
       // Create a proper Article object that meets the backend validation requirements
       const articleData = {
         title: article.title || "",
@@ -303,7 +425,8 @@ const NewsCard = ({ article, onPress, index = 0 }) => {
       
       // Send the properly formatted article object to the backend
       const response = await getMarketInsights(articleData);
-  
+      
+      setInsightLoaded(true);
       Animated.timing(progressAnim, {
         toValue: 1,
         duration: 500,
@@ -311,69 +434,69 @@ const NewsCard = ({ article, onPress, index = 0 }) => {
         easing: Easing.out(Easing.quad),
       }).start();
       
+      console.log("Insights API response:", response);
+      
       // Check if response contains the expected data
       if (response && response.key_points) {
-        // Convert the response to an array of insight objects for the InsightCard component
-        const insightsArray = [
-          {
-            title: "Key Points",
-            description: response.key_points.join("\n• "),
-            impact_level: "high",
-            confidence: response.confidence_score
-          },
-          {
-            title: "Potential Impact on Stocks",
-            description: typeof response.potential_impact.stocks === 'object' 
-              ? Object.entries(response.potential_impact.stocks)
-                  .map(([key, value]) => `${key}: ${value}`)
-                  .join('\n\n')
-              : response.potential_impact.stocks,
-            impact_level: "medium",
-            affected_assets: ["Stocks"]
-          },
-          {
-            title: "Potential Impact on Commodities",
-            description: typeof response.potential_impact.commodities === 'object'
-              ? Object.entries(response.potential_impact.commodities)
-                  .map(([key, value]) => `${key}: ${value}`)
-                  .join('\n\n')
-              : response.potential_impact.commodities,
-            impact_level: "medium",
-            affected_assets: ["Commodities"]
-          },
-          {
-            title: "Potential Impact on Forex",
-            description: typeof response.potential_impact.forex === 'object'
-              ? Object.entries(response.potential_impact.forex)
-                  .map(([key, value]) => `${key}: ${value}`)
-                  .join('\n\n')
-              : response.potential_impact.forex,
-            impact_level: "medium",
-            affected_assets: ["Forex"]
-          },
-          {
-            title: "Recommended Actions",
-            description: response.recommended_actions.join("\n• "),
-            impact_level: "high"
-          }
-        ];
-        
+        // Use the existing processInsightsResponse function to create the insights array
+        const insightsArray = processInsightsResponse(response);
         setInsights(insightsArray);
+      } else if (response && response.error) {
+        // Handle known error cases
+        console.error("Insights API returned an error:", response.error);
+        setError("Failed to generate insights: " + response.error);
+        // Try to use fallback if error response has valid key_points
+        if (response.key_points && Array.isArray(response.key_points)) {
+          const fallbackInsights = processInsightsResponse(response);
+          setInsights(fallbackInsights);
+          setError(null); // Clear error since we have fallback
+        }
       } else {
         // Handle empty or invalid response
+        console.error("Invalid insights response format:", response);
         setError("Failed to generate insights: Invalid response format");
       }
     } catch (err) {
       console.error("Error fetching insights:", err);
-      setError("Failed to generate insights. Please try again.");
-  
+      
+      // Use fallback insights instead of showing an error
+      console.log("Using fallback insights due to error");
+      const fallbackResponse = {
+        key_points: [
+          "Unable to generate insights for this article.",
+          "Please read the full article for more information."
+        ],
+        potential_impact: {
+          stocks: {
+            description: "This article does not provide specific information about the impact on stock markets.",
+            impact_level: "low"
+          },
+          commodities: {
+            description: "This article does not provide specific information about the impact on commodity markets.",
+            impact_level: "low"
+          },
+          forex: {
+            description: "This article does not provide specific information about the impact on forex markets.",
+            impact_level: "low"
+          }
+        },
+        recommended_actions: [
+          "Read the full article for more details"
+        ],
+        confidence_score: 50
+      };
+      
+      // Process fallback insights through the same function as normal insights
+      setInsights(processInsightsResponse(fallbackResponse));
+      setError(null); // Clear error since we have fallback
+      
       Animated.timing(progressAnim, {
         toValue: 0,
         duration: 300,
         useNativeDriver: false,
       }).start();
     } finally {
-      setTimeout(() => setLoading(false), 500);
+      setTimeout(() => setGenerating(false), 500);
     }
   };
   
@@ -527,19 +650,6 @@ const NewsCard = ({ article, onPress, index = 0 }) => {
     }
   };
 
-  // Add null checks and fallback values
-  const safeArticle = {
-    id: article?.id || 'unknown',
-    title: article?.title || 'Market Update',
-    source: article?.source || 'Unknown Source',
-    url: article?.url || '#',
-    publishedAt: article?.publishedAt ? new Date(article.publishedAt) : new Date(),
-    sentiment: article?.sentiment || 'neutral',
-    category: article?.category || 'stocks',
-    summary: article?.summary || article?.content || 'No content available',
-    imageUrl: article?.urlToImage || '/placeholder-news.jpg'
-  };
-
   // Format the source name correctly
   const getSourceName = () => {
     if (!safeArticle.source) return 'Unknown Source';
@@ -553,6 +663,325 @@ const NewsCard = ({ article, onPress, index = 0 }) => {
     return String(safeArticle.source);
   };
 
+  // Helper function to process insights response into an array of insight objects
+  const processInsightsResponse = (response) => {
+    console.log('Processing insights response:', response);
+    
+    // Handle case where response is null or undefined
+    if (!response) {
+      console.log('Response is null or undefined');
+      return [
+        {
+          title: "No Insights Available",
+          description: "Unable to generate insights for this article. Please read the full article for more information.",
+          impact_level: "low",
+        }
+      ];
+    }
+    
+    // Handle case where response is a string
+    if (typeof response === 'string') {
+      try {
+        // Try to parse the string as JSON
+        const parsedResponse = JSON.parse(response);
+        console.log('Successfully parsed string response as JSON');
+        response = parsedResponse;
+      } catch (error) {
+        console.error('Failed to parse string response as JSON:', error);
+        // Use the string as a key point
+        return [
+          {
+            title: "Key Points",
+            description: response,
+            impact_level: "medium",
+          }
+        ];
+      }
+    }
+    
+    // Handle case where response has raw_response field (error from backend)
+    if (response && response.raw_response && !response.key_points) {
+      console.log('Response contains raw_response field, attempting to extract insights');
+      try {
+        // Try to extract JSON from the raw response
+        const jsonMatch = response.raw_response.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const extractedJson = JSON.parse(jsonMatch[0]);
+          console.log('Successfully extracted JSON from raw_response');
+          if (extractedJson.key_points) {
+            response = extractedJson;
+          }
+        }
+      } catch (error) {
+        console.error('Failed to extract JSON from raw_response:', error);
+      }
+    }
+    
+    // Create a valid key_points array if it doesn't exist
+    if (!response.key_points) {
+      console.log('Response missing key_points, creating default key points');
+      response.key_points = [
+        "Unable to generate detailed insights for this article.",
+        "Please read the full article for more information."
+      ];
+    }
+    
+    // Ensure key_points is an array (sometimes the API might return a string or object)
+    if (!Array.isArray(response.key_points)) {
+      console.log('key_points is not an array, converting to array');
+      if (typeof response.key_points === 'string') {
+        // If it's a string, split by periods and filter out empty entries
+        response.key_points = response.key_points
+          .split('.')
+          .map(point => point.trim())
+          .filter(point => point.length > 0);
+        
+        // If splitting didn't work, use the whole string as one point
+        if (response.key_points.length === 0) {
+          response.key_points = [response.key_points];
+        }
+      } else {
+        // If it's not a string or array, create a default array
+        response.key_points = ["Unable to parse insights for this article."];
+      }
+    }
+    
+    // Ensure key_points is not empty
+    if (response.key_points.length === 0) {
+      response.key_points = ["No key points available for this article"];
+    }
+    
+    // Ensure potential_impact exists
+    if (!response.potential_impact) {
+      console.log('Response missing potential_impact, creating default impact');
+      response.potential_impact = {
+        stocks: {
+          description: "This article does not provide specific information about the impact on stock markets.",
+          impact_level: "low"
+        },
+        commodities: {
+          description: "This article does not provide specific information about the impact on commodity markets.",
+          impact_level: "low"
+        },
+        forex: {
+          description: "This article does not provide specific information about the impact on forex markets.",
+          impact_level: "low"
+        }
+      };
+    }
+    
+    // Handle the new response format for potential impact
+    // Check if potential_impact exists and is properly structured
+    let stocksImpact = { description: "", impact_level: "medium" };
+    let commoditiesImpact = { description: "", impact_level: "medium" };
+    let forexImpact = { description: "", impact_level: "medium" };
+    
+    // Extract stocks impact data
+    if (response.potential_impact.stocks) {
+      if (typeof response.potential_impact.stocks === 'object') {
+        // New format
+        stocksImpact = {
+          description: response.potential_impact.stocks.description || "No impact analysis available",
+          impact_level: response.potential_impact.stocks.impact_level?.toLowerCase() || "medium"
+        };
+      } else {
+        // Old format (string)
+        stocksImpact = {
+          description: response.potential_impact.stocks,
+          impact_level: "medium"
+        };
+      }
+    }
+    
+    // Extract commodities impact data
+    if (response.potential_impact.commodities) {
+      if (typeof response.potential_impact.commodities === 'object') {
+        // New format
+        commoditiesImpact = {
+          description: response.potential_impact.commodities.description || "No impact analysis available",
+          impact_level: response.potential_impact.commodities.impact_level?.toLowerCase() || "medium"
+        };
+      } else {
+        // Old format (string)
+        commoditiesImpact = {
+          description: response.potential_impact.commodities,
+          impact_level: "medium"
+        };
+      }
+    }
+    
+    // Extract forex impact data
+    if (response.potential_impact.forex) {
+      if (typeof response.potential_impact.forex === 'object') {
+        // New format
+        forexImpact = {
+          description: response.potential_impact.forex.description || "No impact analysis available",
+          impact_level: response.potential_impact.forex.impact_level?.toLowerCase() || "medium"
+        };
+      } else {
+        // Old format (string)
+        forexImpact = {
+          description: response.potential_impact.forex,
+          impact_level: "medium"
+        };
+      }
+    }
+    
+    // Process each key point to ensure no impact percentages
+    const processedKeyPoints = Array.isArray(response.key_points) 
+      ? response.key_points
+          .filter(keyPoint => keyPoint && typeof keyPoint === 'string') // Filter out null/undefined values
+          .map(keyPoint => {
+            // Remove any percentage symbols or confidence/impact indications from key points
+            return keyPoint
+              .replace(/\b\d+(?:\.\d+)?%(?:\s+(?:impact|confidence|probability|chance|likelihood))?\b/gi, '')
+              .replace(/\b(?:high|medium|low)\s+(?:impact|confidence)\b/gi, '')
+              .replace(/\bwith\s+(?:an?\s+)?(?:impact|confidence)(?:\s+(?:of|level))?\s+(?:of\s+)?\d+(?:\.\d+)?%?\b/gi, '')
+              .replace(/\bimpact(?:\s+percentage)?\s+(?:of\s+)?\d+(?:\.\d+)?%?\b/gi, '')
+              .replace(/\bconfidence\s+(?:score|level)?\s+(?:of\s+)?\d+(?:\.\d+)?%?\b/gi, '')
+              .trim();
+          })
+      : [String(response.key_points || "No insights available")];
+    
+    // Handle empty key points after processing
+    if (processedKeyPoints.length === 0) {
+      processedKeyPoints.push("No insights available for this article");
+    }
+    
+    // Process recommended actions to ensure no impact percentages
+    const processedRecommendedActions = Array.isArray(response.recommended_actions)
+      ? response.recommended_actions
+          .filter(action => action && typeof action === 'string') // Filter out null/undefined values
+          .map(action => {
+            // Remove any percentage symbols or confidence/impact indications from recommended actions
+            return action
+              .replace(/\b\d+(?:\.\d+)?%(?:\s+(?:impact|confidence|probability|chance|likelihood))?\b/gi, '')
+              .replace(/\b(?:high|medium|low)\s+(?:impact|confidence)\b/gi, '')
+              .replace(/\bwith\s+(?:an?\s+)?(?:impact|confidence)(?:\s+(?:of|level))?\s+(?:of\s+)?\d+(?:\.\d+)?%?\b/gi, '')
+              .replace(/\bimpact(?:\s+percentage)?\s+(?:of\s+)?\d+(?:\.\d+)?%?\b/gi, '')
+              .replace(/\bconfidence\s+(?:score|level)?\s+(?:of\s+)?\d+(?:\.\d+)?%?\b/gi, '')
+              .trim();
+          })
+      : (response.recommended_actions ? [String(response.recommended_actions)] : ["No specific actions recommended"]);
+    
+    // Handle empty recommended actions after processing
+    if (processedRecommendedActions.length === 0) {
+      processedRecommendedActions.push("No specific actions recommended");
+    }
+    
+    // Create the insight objects safely
+    try {
+      // Convert the response to an array of insight objects for the InsightCard component
+      return [
+        {
+          title: "Key Points",
+          description: processedKeyPoints.join("\n\n"),
+        },
+        {
+          title: "Stock Market Impact",
+          description: stocksImpact.description || "No impact analysis available",
+          impact_level: stocksImpact.impact_level || "medium",
+          affected_assets: ["Stocks", "Equities"]
+        },
+        {
+          title: "Commodities Impact",
+          description: commoditiesImpact.description || "No impact analysis available",
+          impact_level: commoditiesImpact.impact_level || "medium",
+          affected_assets: ["Commodities", "Raw Materials"]
+        },
+        {
+          title: "Forex Impact",
+          description: forexImpact.description || "No impact analysis available",
+          impact_level: forexImpact.impact_level || "medium",
+          affected_assets: ["Currencies", "Foreign Exchange"]
+        },
+        {
+          title: "Recommended Actions",
+          description: processedRecommendedActions.join("\n\n"),
+        }
+      ];
+    } catch (error) {
+      console.error('Error creating insight cards:', error);
+      // Return fallback insights if there was an error creating the insight cards
+      return [
+        {
+          title: "Key Points",
+          description: "Unable to process insights for this article. Please read the full article for more information.",
+        },
+        {
+          title: "Market Impact",
+          description: "No impact analysis available",
+          impact_level: "low",
+          affected_assets: ["Markets"]
+        }
+      ];
+    }
+  };
+
+  const handleSaveToggle = async () => {
+    try {
+      // Prevent multiple rapid clicks
+      if (insightLoaded) {
+        console.log('Save operation in progress, please wait');
+        return;
+      }
+      
+      setInsightLoaded(true);
+      
+      if (saved) {
+        // Unsave article logic
+        await unsaveArticle(article.id);
+        setSaved(false);
+        if (onSaveToggle) {
+          onSaveToggle();
+        }
+        return;
+      }
+      
+      // Check if user is trying to save (not unsave) and track usage
+      if (!saved && !isSubscribed) {
+        const { showPaywall, requireLogin } = await trackArticleSave();
+        
+        if (showPaywall) {
+          setPaywallRequiresLogin(requireLogin);
+          // Use the real DECODR PRO paywall
+          showCustomPaywall(navigation);
+          return;
+        }
+      }
+      
+      // Save article
+      await saveArticle({
+        id: article.id,
+        title: article.title,
+        url: article.link,
+        image_url: article.photo_url || article.thumbnail_url,
+        source: article.source_name,
+        description: article.snippet,
+        published_at: article.published_datetime_utc
+      });
+      
+      setSaved(true);
+      if (onSaveToggle) {
+        onSaveToggle();
+      }
+    } catch (error) {
+      console.error('Error toggling saved status:', error);
+      Alert.alert(
+        'Error',
+        'Could not update saved status. Please try again later.'
+      );
+    } finally {
+      setInsightLoaded(false);
+    }
+  };
+
+  // Get save button styles based on saved state
+  const getSaveButtonStyle = () => {
+    return saved ? styles.savedButton : styles.saveButton;
+  };
+
+  // Format component return
   return (
     <Animated.View
       style={[
@@ -565,12 +994,11 @@ const NewsCard = ({ article, onPress, index = 0 }) => {
     >
       <Card style={styles.card}>
         <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
-          {safeArticle.imageUrl && !imageError ? (
+          {safeArticle.imageUrl && !insightLoaded ? (
             <Card.Cover 
               source={getImageSource()} 
               style={styles.cardImage}
               resizeMode="cover"
-              onError={() => setImageError(true)}
             />
           ) : (
             <View style={[styles.placeholderImage, { backgroundColor: `${getCategoryColor()}15` }]}>
@@ -579,8 +1007,8 @@ const NewsCard = ({ article, onPress, index = 0 }) => {
                 <Text style={[styles.categoryText, { color: getCategoryColor() }]}>{getCategoryName()}</Text>
               </View>
               <View style={styles.logoContainer}>
-                <Text style={styles.headlineText}>HEADLINE</Text>
-                <Text style={styles.decoderText}>DECODER</Text>
+                <Text style={styles.headlineText}></Text>
+                <Text style={styles.decoderText}>DECODR</Text>
               </View>
             </View>
           )}
@@ -590,7 +1018,7 @@ const NewsCard = ({ article, onPress, index = 0 }) => {
           <View style={styles.sourceContainer}>
             <Text style={styles.source}>{getSourceName()}</Text>
           </View>
-          
+            
           <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
             <Title style={styles.title}>{safeArticle.title}</Title>
             {safeArticle.summary && (
@@ -610,37 +1038,52 @@ const NewsCard = ({ article, onPress, index = 0 }) => {
           )}
         </Card.Content>
         
-        <TouchableOpacity 
-          style={styles.insightsButton} 
-          onPress={toggleExpand}
-          activeOpacity={0.7}
-        >
-          <View style={styles.insightsButtonContent}>
-            <MaterialCommunityIcons 
-              name="chart-line" 
-              size={20} 
-              color="#FFFFFF" 
-              style={styles.insightsIcon}
-            />
-            <Text style={styles.insightsButtonText}>
-              {expanded ? 'Hide Market Insights' : 'Generate Market Insights'}
-            </Text>
-            <Animated.View style={{ transform: [{ rotate: rotateInterpolate }] }}>
+        <View style={styles.buttonsContainer}>
+          <TouchableOpacity 
+            style={styles.insightsButton} 
+            onPress={toggleExpand}
+            activeOpacity={0.7}
+          >
+            <View style={styles.insightsButtonContent}>
               <MaterialCommunityIcons 
-                name="chevron-down" 
+                name="chart-line" 
                 size={20} 
                 color="#FFFFFF" 
+                style={styles.insightsIcon}
               />
-            </Animated.View>
-          </View>
-        </TouchableOpacity>
+              <Text style={styles.insightsButtonText}>
+                {expanded ? 'Hide Market Insights' : 'View Market Insights'}
+              </Text>
+              <Animated.View style={{ transform: [{ rotate: rotateInterpolate }] }}>
+                <MaterialCommunityIcons 
+                  name="chevron-down" 
+                  size={20} 
+                  color="#FFFFFF" 
+                />
+              </Animated.View>
+            </View>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={getSaveButtonStyle()} 
+            onPress={handleSaveToggle}
+            activeOpacity={0.7}
+            disabled={insightLoaded && user}
+          >
+            <MaterialCommunityIcons 
+              name={saved ? "bookmark" : "bookmark-outline"} 
+              size={20} 
+              color="#000000" 
+            />
+          </TouchableOpacity>
+        </View>
         
         {expanded && (
           <Card.Content style={styles.expandedContent}>
-            {loading ? (
+            {generating ? (
               <View style={styles.loadingContainer}>
                 <LoadingSpinner />
-                <Text style={styles.loadingText}>Analyzing market impact...</Text>
+                <Text style={styles.loadingText}>{loadingMessages[loadingMessageIndex]}</Text>
                 <View style={styles.loadingProgressContainer}>
                   <Animated.View 
                     style={[
@@ -671,7 +1114,7 @@ const NewsCard = ({ article, onPress, index = 0 }) => {
             ) : insights && insights.length > 0 ? (
               <View style={styles.insightsContainer}>
                 {insights.map((insight, index) => (
-                  <InsightCard key={index} insight={insight} index={index} />
+                  <InsightCard key={index} insight={insight} index={index} articleId={article.id} />
                 ))}
                 <View style={styles.insightsFooter}>
                   <Text style={styles.insightsFooterText}>
@@ -705,6 +1148,8 @@ NewsCard.propTypes = {
   }).isRequired,
   onPress: PropTypes.func.isRequired,
   index: PropTypes.number,
+  isSavedScreen: PropTypes.bool,
+  onSaveToggle: PropTypes.func,
 };
 
 const styles = StyleSheet.create({
@@ -712,22 +1157,22 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   card: {
-    borderRadius: 12,
+    borderRadius: 0,
     overflow: 'hidden',
+    elevation: 0,
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    shadowOffset: { height: 0, width: 0 },
     backgroundColor: '#FFFFFF',
-    borderWidth: 0,
-    elevation: 1,
   },
   cardImage: {
     height: 200,
-    backgroundColor: '#F0F0F0',
+    borderRadius: 0,
   },
   cardContent: {
     padding: 16,
   },
   sourceContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     marginBottom: 8,
   },
   source: {
@@ -754,10 +1199,11 @@ const styles = StyleSheet.create({
   },
   insightsButton: {
     backgroundColor: '#000000',
-    paddingVertical: 12,
-    marginHorizontal: 16,
-    marginBottom: 16,
-    borderRadius: 8,
+    padding: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 0,
+    minWidth: '80%',
   },
   insightsButtonContent: {
     flexDirection: 'row',
@@ -776,6 +1222,7 @@ const styles = StyleSheet.create({
   },
   expandedContent: {
     padding: 16,
+    paddingHorizontal: 8,
     paddingTop: 0,
   },
   placeholderImage: {
@@ -785,11 +1232,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     position: 'relative',
     overflow: 'hidden',
+    borderRadius: 0,
   },
   categoryBadge: {
     paddingHorizontal: 12,
     paddingVertical: 4,
-    borderRadius: 4,
+    borderRadius: 0,
     backgroundColor: 'rgba(255, 255, 255, 0.9)',
     marginTop: 8,
   },
@@ -817,15 +1265,20 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
   },
   loadingContainer: {
-    padding: 20,
+    padding: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 16,
+    backgroundColor: 'rgba(250, 250, 250, 0.9)',
+    borderRadius: 8,
     margin: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   loadingText: {
-    marginTop: 16,
+    marginTop: 24,
     fontSize: 16,
     fontWeight: 'bold',
     color: '#000000',
@@ -883,59 +1336,63 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   spinnerContainer: {
-    width: 120,
-    height: 120,
+    position: 'relative',
+    width: 80,
+    height: 80,
     justifyContent: 'center',
     alignItems: 'center',
-    position: 'relative',
+    marginVertical: 8,
   },
   spinnerOuter: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
+    width: 70,
+    height: 70,
+    borderRadius: 35, 
     borderWidth: 3,
-    borderRadius: 60,
-    borderColor: 'rgba(0, 0, 0, 0.1)',
-    borderTopColor: '#4CAF50', // Green for finance
-    borderRightColor: 'transparent',
-    borderBottomColor: 'transparent',
-    borderLeftColor: 'transparent',
+    borderColor: '#2196F3',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    opacity: 0.7,
   },
   spinnerMiddle: {
     position: 'absolute',
-    width: '80%',
-    height: '80%',
-    borderWidth: 5,
-    borderRadius: 48,
-    borderColor: 'rgba(0, 0, 0, 0.1)',
-    borderTopColor: 'transparent',
-    borderRightColor: '#2196F3', // Blue for tech
-    borderBottomColor: 'transparent',
-    borderLeftColor: 'transparent',
+    width: 50,
+    height: 50,
+    borderRadius: 25, 
+    borderWidth: 4,
+    borderColor: '#4CAF50',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    opacity: 0.8,
   },
   spinnerInner: {
     position: 'absolute',
-    width: '60%',
-    height: '60%',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     borderWidth: 3,
-    borderRadius: 36,
-    borderColor: 'rgba(0, 0, 0, 0.1)',
-    borderTopColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderBottomColor: '#FF9800', // Orange for business
-    borderLeftColor: 'transparent',
+    borderColor: '#FF9800',
+    borderStyle: 'solid',
+    backgroundColor: 'rgba(255, 152, 0, 0.1)',
+    opacity: 0.9,
   },
   spinnerCenter: {
     position: 'absolute',
-    width: '40%',
-    height: '40%',
-    borderRadius: 24,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: '#000000',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 5,
   },
   insightsContainer: {
-    padding: 16,
+    marginHorizontal: 0,
   },
   insightsFooter: {
     padding: 16,
@@ -962,13 +1419,122 @@ const styles = StyleSheet.create({
   readMoreButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
     marginTop: 8,
   },
   readMoreText: {
-    fontSize: 14,
     color: '#2196F3',
+    fontSize: 14,
     marginRight: 4,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  buttonsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    margin: 16,
+    marginTop: 0,
+    marginBottom: 16,
+  },
+  saveButton: {
+    padding: 8,
+    marginLeft: 8,
+    backgroundColor: 'transparent',
+    borderRadius: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  savedButton: {
+    padding: 8,
+    marginLeft: 8,
+    backgroundColor: 'transparent',
+    borderRadius: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  contentContainer: {
+    flexDirection: 'column',
+  },
+  sourceText: {
+    fontSize: 12,
+    color: '#000000',
+    fontWeight: '600',
+    fontFamily: 'Inter-SemiBold',
+    textTransform: 'uppercase',
+  },
+  publishedText: {
+    fontSize: 12,
+    color: '#666666',
+    fontFamily: 'Inter_400Regular',
+  },
+  imageContainer: {
+    height: 200,
+    marginBottom: 16,
+  },
+  image: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 0,
+  },
+  cardActions: {
+    padding: 0,
+  },
+  footerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  readButtonContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+  },
+  readMoreText: {
+    color: '#000000',
+    fontSize: 14,
+    marginRight: 8,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  insightsToggle: {
+    padding: 12,
+  },
+  insightsToggleText: {
+    color: '#000000',
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: 'Inter_600SemiBold',
+  },
+  insightSection: {
+    marginBottom: 16,
+  },
+  subscriptionPromptContainer: {
+    backgroundColor: 'rgba(0, 0, 0, 0.03)',
+    padding: 16,
+    borderRadius: 8,
+    marginVertical: 8,
+    borderWidth: 1,
+    borderColor: '#FFD700',
+  },
+  subscriptionPromptTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    color: '#000000',
+  },
+  subscriptionPromptText: {
+    fontSize: 14,
+    color: '#666666',
+    marginBottom: 12,
+  },
+  subscribeButton: {
+    backgroundColor: '#FFD700',
+    padding: 10,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  subscribeButtonText: {
+    color: '#000000',
+    fontWeight: 'bold',
+    fontSize: 14,
   },
 });
 

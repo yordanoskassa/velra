@@ -21,7 +21,7 @@ const theme = {
   fonts: {
     ...DefaultTheme.fonts,
     regular: {
-      fontFamily: 'Inter_400Regular',
+      fontFamily: 'Raleway-Regular',
       fontWeight: 'normal',
     },
     medium: {
@@ -29,16 +29,16 @@ const theme = {
       fontWeight: 'normal',
     },
     light: {
-      fontFamily: 'Inter_400Regular',
+      fontFamily: 'Raleway-Regular',
       fontWeight: 'normal',
     },
     thin: {
-      fontFamily: 'Inter_400Regular',
+      fontFamily: 'Raleway-Regular',
       fontWeight: 'normal',
     },
   },
   typography: {
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Raleway-Regular',
     fontSize: {
       small: 14,
       medium: 16,

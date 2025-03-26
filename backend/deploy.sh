@@ -7,22 +7,33 @@ CONTAINER_NAME="market-breakdown-backend"
 NETWORK_NAME="market-breakdown-network"
 HOST_PORT=${1:-8000}  # Use first argument as port or default to 8000
 CONTAINER_PORT=8000
+FORCE_MODE=${2:-""}  # Second argument for force mode
 
 # Check if the specified port is already in use
 if lsof -Pi :$HOST_PORT -sTCP:LISTEN -t >/dev/null ; then
-    echo "Warning: Port $HOST_PORT is already in use!"
-    echo "You can specify a different port by running: ./deploy.sh <port_number>"
-    echo "For example: ./deploy.sh 8001"
-    
-    # Ask if the user wants to continue with a different port
-    read -p "Would you like to try port $((HOST_PORT+1)) instead? (y/n) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        HOST_PORT=$((HOST_PORT+1))
-        echo "Using port $HOST_PORT instead."
+    if [[ "$FORCE_MODE" == "force" ]]; then
+        echo "Force mode enabled. Killing process using port $HOST_PORT..."
+        # Get PID of process using the port and kill it
+        PID=$(lsof -Pi :$HOST_PORT -sTCP:LISTEN -t)
+        echo "Killing process with PID: $PID"
+        kill -9 $PID
+        sleep 1  # Give it a moment to release the port
     else
-        echo "Deployment aborted. Please free up port $HOST_PORT or specify a different port."
-        exit 1
+        echo "Warning: Port $HOST_PORT is already in use!"
+        echo "You can specify a different port by running: ./deploy.sh <port_number>"
+        echo "For example: ./deploy.sh 8001"
+        echo "Or use force mode to kill the process using this port: ./deploy.sh $HOST_PORT force"
+        
+        # Ask if the user wants to continue with a different port
+        read -p "Would you like to try port $((HOST_PORT+1)) instead? (y/n) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            HOST_PORT=$((HOST_PORT+1))
+            echo "Using port $HOST_PORT instead."
+        else
+            echo "Deployment aborted. Please free up port $HOST_PORT or specify a different port."
+            exit 1
+        fi
     fi
 fi
 

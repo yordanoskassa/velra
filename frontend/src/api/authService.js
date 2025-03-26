@@ -2,25 +2,11 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import { getAuthApiUrl } from './config';
 
-// Get the API URL from environment variables or use a default
-const API_URL = Constants.expoConfig?.extra?.apiUrl || 'http://localhost:8000';
-
-// For iOS simulator, we need to use localhost instead of 127.0.0.1
-const getAuthApiUrl = () => {
-  // If we're on iOS simulator, replace localhost with the special IP for simulator
-  if (Platform.OS === 'ios' && API_URL.includes('localhost')) {
-    return API_URL.replace('localhost', '127.0.0.1');
-  }
-  return API_URL;
-};
-
-// Create an axios instance
+// Create an Axios instance with the API URL
 const api = axios.create({
   baseURL: getAuthApiUrl(),
-  headers: {
-    'Content-Type': 'application/json',
-  },
 });
 
 // Add a request interceptor to add the token to requests
@@ -54,113 +40,155 @@ api.interceptors.response.use(
 
 /**
  * Register a new user
- * @param {string} name - User's full name
- * @param {string} email - User's email
- * @param {string} password - User's password
- * @returns {Promise} - Promise with the registration result
+ * @param {Object} userData - User registration data
+ * @returns {Promise} - Promise with registration response
  */
-export const register = async (name, email, password) => {
+export const register = async (userData) => {
   try {
-    const response = await api.post('/auth/register', {
-      name,
-      email,
-      password,
-    });
+    console.log('API URL:', getAuthApiUrl());
+    console.log('Register endpoint:', `${getAuthApiUrl()}/register`);
+    console.log('Sending registration data:', JSON.stringify(userData));
     
-    const { access_token } = response.data;
-    const userData = {
-      email: response.data.email,
-      name: response.data.name,
-      id: response.data.id || response.data.user_id,
-      username: response.data.username || response.data.email
-    };
-    
-    // Store token and user data
-    await AsyncStorage.setItem('token', access_token);
-    await AsyncStorage.setItem('user', JSON.stringify(userData));
-    
-    return { user: userData, token: access_token };
+    // The baseURL already includes '/auth', so we just need '/register'
+    const response = await api.post('/register', userData);
+    console.log('Registration response:', response.data);
+    return response.data;
   } catch (error) {
-    throw handleError(error);
+    console.error('Registration error details:', error);
+    
+    if (error.response) {
+      // The request was made and the server responded with a status code
+      // that falls out of the range of 2xx
+      console.error('Error response status:', error.response.status);
+      console.error('Error response data:', error.response.data);
+      throw new Error(error.response.data.detail || 'Registration failed');
+    } else if (error.request) {
+      // The request was made but no response was received
+      console.error('No response received for request:', error.request);
+      throw new Error('No response from server. Please check your internet connection.');
+    } else {
+      // Something happened in setting up the request that triggered an Error
+      console.error('Error setting up request:', error.message);
+      throw new Error('Error setting up request: ' + error.message);
+    }
   }
 };
 
 /**
  * Login a user
- * @param {string} email - User's email
- * @param {string} password - User's password
- * @returns {Promise} - Promise with the login result
+ * @param {Object} credentials - User login credentials
+ * @returns {Promise} - Promise with login response
  */
-export const login = async (email, password) => {
+export const login = async (credentials) => {
   try {
-    const formData = new URLSearchParams();
-    formData.append('username', email);
-    formData.append('password', password);
-    
-    const response = await axios.post(`${getAuthApiUrl()}/auth/token`, formData, {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-    });
-    
-    const { access_token } = response.data;
-    const userData = {
-      email: response.data.email,
-      name: response.data.name,
-      id: response.data.id || response.data.user_id,
-      username: response.data.username || response.data.email
-    };
-    
-    // Store token and user data
-    await AsyncStorage.setItem('token', access_token);
-    await AsyncStorage.setItem('user', JSON.stringify(userData));
-    
-    return { user: userData, token: access_token };
+    // The baseURL already includes '/auth', so we just need '/login'
+    const response = await api.post('/login', credentials);
+    return response.data;
   } catch (error) {
-    throw handleError(error);
+    if (error.response) {
+      throw new Error(error.response.data.detail || 'Login failed');
+    } else if (error.request) {
+      throw new Error('No response from server. Please check your internet connection.');
+    } else {
+      throw new Error('Error setting up request: ' + error.message);
+    }
+  }
+};
+
+/**
+ * Reset password
+ * @param {string} email - User email
+ * @returns {Promise} - Promise with reset password response
+ */
+export const resetPassword = async (email) => {
+  try {
+    // The baseURL already includes '/auth', so we just need '/reset-password'
+    const response = await api.post('/reset-password', { email });
+    return response.data;
+  } catch (error) {
+    if (error.response) {
+      throw new Error(error.response.data.detail || 'Password reset failed');
+    } else if (error.request) {
+      throw new Error('No response from server. Please check your internet connection.');
+    } else {
+      throw new Error('Error setting up request: ' + error.message);
+    }
+  }
+};
+
+/**
+ * Get user profile
+ * @param {string} token - User authentication token
+ * @returns {Promise} - Promise with user profile
+ */
+export const getUserProfile = async (token) => {
+  try {
+    // The baseURL already includes '/auth', so we just need '/profile'
+    const response = await api.get('/profile', {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+    return response.data;
+  } catch (error) {
+    if (error.response) {
+      throw new Error(error.response.data.detail || 'Failed to get user profile');
+    } else if (error.request) {
+      throw new Error('No response from server. Please check your internet connection.');
+    } else {
+      throw new Error('Error setting up request: ' + error.message);
+    }
   }
 };
 
 /**
  * Login with Google
  * @param {string} token - Google auth token
- * @returns {Promise} - Promise with the login result
+ * @returns {Promise} - Promise with login response
  */
 export const googleLogin = async (token) => {
   try {
-    const response = await api.post('/auth/google', {
-      code: token,
+    // The baseURL already includes '/auth', so we just need '/google'
+    const response = await api.post('/google', {
+      token
     });
-    
-    const { access_token } = response.data;
-    const userData = {
-      email: response.data.email,
-      name: response.data.name,
-      id: response.data.id || response.data.user_id,
-      username: response.data.username || response.data.email
-    };
-    
-    // Store token and user data
-    await AsyncStorage.setItem('token', access_token);
-    await AsyncStorage.setItem('user', JSON.stringify(userData));
-    
-    return { user: userData, token: access_token };
+    return response.data;
   } catch (error) {
-    throw handleError(error);
+    if (error.response) {
+      throw new Error(error.response.data.detail || 'Google login failed');
+    } else if (error.request) {
+      throw new Error('No response from server. Please check your internet connection.');
+    } else {
+      throw new Error('Error setting up request: ' + error.message);
+    }
   }
 };
 
 /**
- * Reset password
- * @param {string} email - User's email
- * @returns {Promise} - Promise that resolves when reset email is sent
+ * Login with Apple credentials
+ * @param {string} identityToken - Apple identity token
+ * @param {Object} fullName - User's full name (optional)
+ * @returns {Promise} - Promise with login response
  */
-export const resetPassword = async (email) => {
+export const appleLogin = async (identityToken, fullName = null) => {
   try {
-    await api.post('/auth/forgot-password', { email });
-    return true;
+    console.log('Apple login - sending request with:', { identityToken: identityToken.substring(0, 20) + '...', fullName });
+    
+    // The baseURL already includes '/auth', so we just need '/apple'
+    const response = await api.post('/apple', {
+      identity_token: identityToken, // This is the key for backend
+      full_name: fullName
+    });
+    return response.data;
   } catch (error) {
-    throw handleError(error);
+    console.error('Apple login error details:', error.response?.data || error.message);
+    if (error.response) {
+      throw new Error(error.response.data.detail || 'Apple login failed');
+    } else if (error.request) {
+      throw new Error('No response from server. Please check your internet connection.');
+    } else {
+      throw new Error('Error setting up request: ' + error.message);
+    }
   }
 };
 
@@ -179,12 +207,45 @@ export const logout = async () => {
 };
 
 /**
+ * Delete the current user's account
+ * @returns {Promise} - Promise that resolves when account is deleted
+ */
+export const deleteAccount = async () => {
+  try {
+    console.log('Attempting to delete account');
+    const response = await api.delete('/delete-account');
+    console.log('Delete account response:', response.data);
+    
+    // Clear storage after successful deletion
+    await AsyncStorage.removeItem('token');
+    await AsyncStorage.removeItem('user');
+    
+    return response.data;
+  } catch (error) {
+    console.error('Delete account error in service:', error);
+    
+    if (error.response) {
+      console.error('Error response data:', error.response.data);
+      console.error('Error response status:', error.response.status);
+      throw new Error(error.response.data.detail || 'Failed to delete account');
+    } else if (error.request) {
+      console.error('No response received for request:', error.request);
+      throw new Error('No response from server. Please check your internet connection.');
+    } else {
+      console.error('Error setting up request:', error.message);
+      throw new Error('Error setting up request: ' + error.message);
+    }
+  }
+};
+
+/**
  * Get the current user's profile
  * @returns {Promise} - Promise with the user profile
  */
 export const getCurrentUser = async () => {
   try {
-    const response = await api.get('/auth/me');
+    // The baseURL already includes '/auth', so we just need '/me'
+    const response = await api.get('/me');
     return response.data;
   } catch (error) {
     throw handleError(error);

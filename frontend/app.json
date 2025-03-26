@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Headline Decoder",
+    "name": "Decodr",
     "slug": "headline-decoder",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "backgroundColor": "#000000",
     "userInterfaceStyle": "light",
@@ -12,21 +12,25 @@
       "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
-    "scheme": "headlinedecoder",
-    
+    "scheme": "decodr",
+    "jsEngine": "hermes",
+    "experiments": {
+      "tsconfigPaths": true
+    },
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
-      "buildNumber": "3",
+      "buildNumber": "12",
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.headlinedecoder",
+      "bundleIdentifier": "com.decodr.app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "CFBundleIconName": "AppIcon"
+        "CFBundleIconName": "AppIcon",
+        "NSMediaLibraryUsageDescription": "Allow $(PRODUCT_NAME) to access your media library"
       },
       "icon": "./assets/icon.png",
-      "appStoreUrl": "https://apps.apple.com/app/headline-decoder/id123456789",
+      "appStoreUrl": "https://apps.apple.com/app/decodr/idREPLACE_WITH_APP_STORE_ID",
       "icons": {
         "spotlight": {
           "image": "./assets/icon.png",

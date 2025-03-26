@@ -2,119 +2,163 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import { getAuthApiUrl } from '../api/config';
+import * as authService from '../api/authService';
 
-// Get the API URL from environment variables or use a default
-const API_URL = Constants.expoConfig?.extra?.apiUrl || 'http://localhost:8000';
-
-// For iOS simulator, we need to use 127.0.0.1 instead of localhost
-const getAuthApiUrl = () => {
-  // If we're on iOS simulator, replace localhost with the special IP for simulator
-  if (Platform.OS === 'ios' && API_URL.includes('localhost')) {
-    return API_URL.replace('localhost', '127.0.0.1');
-  }
-  return API_URL;
-};
-
-// Create the context
+// Create the Auth Context
 const AuthContext = createContext({
   user: null,
+  token: null,
   isLoading: false,
   error: null,
-  login: async () => {},
-  register: async () => {},
-  googleLogin: async () => {},
-  resetPassword: async () => {},
-  logout: () => {},
-  deleteAccount: async () => {},
   isAuthenticated: false,
+  login: async () => {},
+  logout: async () => {},
+  register: async () => {},
+  resetPassword: async () => {},
+  googleLogin: async () => {},
+  appleLogin: async () => {},
+  deleteAccount: async () => {},
+  clearError: () => {},
 });
 
-// Custom hook to use the auth context
-export const useAuth = () => {
-  return useContext(AuthContext);
-};
-
-// Provider component
+// Auth Provider component
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [token, setToken] = useState(null);
+  const [isPremium, setIsPremium] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // Load user data from storage on app start
+  // Restore user session on app start
   useEffect(() => {
-    loadUser();
+    const bootstrapAsync = async () => {
+      try {
+        setLoading(true);
+        const userData = await AsyncStorage.getItem('user');
+        const storedToken = await AsyncStorage.getItem('token');
+        
+        if (userData && storedToken) {
+          const parsedUser = JSON.parse(userData);
+          setUser(parsedUser);
+          setToken(storedToken);
+          setIsPremium(parsedUser.isPremium || false);
+          
+          // Verify token is still valid
+          try {
+            const response = await fetch(`${getAuthApiUrl()}/auth/verify`, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${storedToken}`
+              }
+            });
+            
+            if (!response.ok) {
+              throw new Error('Token invalid');
+            }
+            
+            // Optionally refresh user data
+            const userResponse = await fetch(`${getAuthApiUrl()}/users/me`, {
+              headers: {
+                'Authorization': `Bearer ${storedToken}`
+              }
+            });
+            
+            if (userResponse.ok) {
+              const freshUserData = await userResponse.json();
+              setUser(freshUserData);
+              setIsPremium(freshUserData.isPremium || false);
+              await AsyncStorage.setItem('user', JSON.stringify(freshUserData));
+            }
+          } catch (error) {
+            console.log('Session verification failed:', error);
+            // Clear invalid session
+            setUser(null);
+            setToken(null);
+            setIsPremium(false);
+            await AsyncStorage.removeItem('user');
+            await AsyncStorage.removeItem('token');
+          }
+        }
+      } catch (e) {
+        console.error('Failed to restore user session:', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    bootstrapAsync();
   }, []);
 
-  // Log when user state changes
+  // Webhook subscription listener for premium status changes
   useEffect(() => {
-    if (isInitialized) {
-      console.log('AuthContext: User state changed:', user ? `Logged in as ${user.email}` : 'Logged out');
-    }
-  }, [user, isInitialized]);
-
-  const loadUser = async () => {
-    try {
-      setIsLoading(true);
-      
-      console.log('AuthContext: Loading user data from storage...');
-      
-      const token = await AsyncStorage.getItem('token');
-      const userData = await AsyncStorage.getItem('user');
-      
-      if (token && userData) {
-        console.log('AuthContext: Found token and user data in storage');
-        const parsedUser = JSON.parse(userData);
-        console.log('AuthContext: Setting user state from storage:', parsedUser.email);
-        setUser(parsedUser);
-      } else {
-        console.log('AuthContext: No valid auth data found in storage');
-        setUser(null);
+    if (!user) return;
+    
+    // This would be replaced with actual webhook implementation
+    const subscriptionListener = async () => {
+      try {
+        // Poll for subscription changes every 5 minutes
+        const interval = setInterval(async () => {
+          if (!token) {
+            clearInterval(interval);
+            return;
+          }
+          
+          const response = await fetch(`${getAuthApiUrl()}/users/subscription-status`, {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.isPremium !== isPremium) {
+              setIsPremium(data.isPremium);
+              
+              // Update user object
+              const updatedUser = {...user, isPremium: data.isPremium};
+              setUser(updatedUser);
+              await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+            }
+          }
+        }, 5 * 60 * 1000); // Every 5 minutes
+        
+        return () => clearInterval(interval);
+      } catch (error) {
+        console.error('Error in subscription listener:', error);
       }
-    } catch (err) {
-      console.error('AuthContext: Error loading user data:', err);
-      setError('Failed to load user data');
-      setUser(null);
-    } finally {
-      setIsLoading(false);
-      setIsInitialized(true);
-    }
-  };
+    };
+    
+    subscriptionListener();
+  }, [user, token]);
 
   // Login function
   const login = async (email, password) => {
+    setIsLoading(true);
+    setError(null);
+    
     try {
-      setIsLoading(true);
-      setError(null);
+      const response = await authService.login({ email, password });
       
-      const response = await fetch(`${getAuthApiUrl()}/auth/token`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: `username=${email}&password=${password}`,
-      });
+      const { access_token } = response;
+      const userData = {
+        email: response.email,
+        name: response.name,
+        id: response.id || response.user_id,
+        username: response.username || response.email,
+        isPremium: response.isPremium || false
+      };
       
-      const data = await response.json();
+      // Store token and user data
+      await AsyncStorage.setItem('token', access_token);
+      await AsyncStorage.setItem('user', JSON.stringify(userData));
       
-      if (response.ok) {
-        const userData = {
-          email: data.email,
-          name: data.name,
-          id: data.id || data.user_id,
-          username: data.username || data.email
-        };
-        
-        setUser(userData);
-        
-        // Store token and user data
-        await AsyncStorage.setItem('token', data.access_token);
-        await AsyncStorage.setItem('user', JSON.stringify(userData));
-        
-        return { user: userData, token: data.access_token };
-      } else {
-        throw new Error(data.detail || 'Login failed');
-      }
+      setToken(access_token);
+      setUser(userData);
+      setIsPremium(userData.isPremium || false);
+      return { user: userData, token: access_token };
     } catch (err) {
       setError(err.message || 'An error occurred during login');
       throw err;
@@ -125,137 +169,36 @@ export const AuthProvider = ({ children }) => {
 
   // Register function
   const register = async (name, email, password, disclaimerAccepted) => {
-    console.log('Starting registration process...');
+    setIsLoading(true);
+    setError(null);
+    
     try {
-      setIsLoading(true);
-      setError(null);
-      
-      // Log registration attempt
-      console.log(`Attempting to register user: ${email}`);
-      
-      // Make API request
-      const response = await fetch(`${getAuthApiUrl()}/auth/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          name, 
-          email, 
-          password, 
-          disclaimer_accepted: disclaimerAccepted 
-        }),
+      const response = await authService.register({ 
+        name, 
+        email, 
+        password, 
+        disclaimer_accepted: disclaimerAccepted 
       });
       
-      // Parse response
-      const data = await response.json();
-      console.log('Registration API response:', data);
-      
-      // Check if registration was successful
-      if (!response.ok) {
-        console.error('Registration failed:', data.detail || 'Unknown error');
-        throw new Error(data.detail || 'Registration failed');
-      }
-      
-      // Create user object
+      const { access_token } = response;
       const userData = {
-        email: data.email,
-        name: data.name,
-        id: data.id || data.user_id,
-        username: data.username || data.email,
-        disclaimer_accepted: true
+        email: response.email,
+        name: response.name,
+        id: response.id || response.user_id,
+        username: response.username || response.email,
+        isPremium: response.isPremium || false
       };
       
-      console.log('Registration successful, user data:', userData);
-      
-      // Save token to storage
-      console.log('Saving token to storage...');
-      await AsyncStorage.setItem('token', data.access_token);
-      
-      // Save user data to storage
-      console.log('Saving user data to storage...');
+      // Store token and user data
+      await AsyncStorage.setItem('token', access_token);
       await AsyncStorage.setItem('user', JSON.stringify(userData));
       
-      // Update user state - this should trigger navigation change
-      console.log('Updating user state...');
+      setToken(access_token);
       setUser(userData);
-      
-      console.log('Registration complete, user state updated');
-      return userData;
-    } catch (error) {
-      console.error('Registration error:', error);
-      setError(error.message || 'An error occurred during registration');
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Google login function
-  const googleLogin = async (token) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      const response = await fetch(`${getAuthApiUrl()}/auth/google`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ code: token }),
-      });
-      
-      const data = await response.json();
-      
-      if (response.ok) {
-        const userData = {
-          email: data.email,
-          name: data.name,
-          id: data.id || data.user_id,
-          username: data.username || data.email
-        };
-        
-        setUser(userData);
-        
-        // Store token and user data
-        await AsyncStorage.setItem('token', data.access_token);
-        await AsyncStorage.setItem('user', JSON.stringify(userData));
-        
-        return { user: userData, token: data.access_token };
-      } else {
-        throw new Error(data.detail || 'Google login failed');
-      }
+      setIsPremium(userData.isPremium || false);
+      return { user: userData, token: access_token };
     } catch (err) {
-      setError(err.message || 'An error occurred during Google login');
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Reset password function
-  const resetPassword = async (email) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      const response = await fetch(`${getAuthApiUrl()}/auth/forgot-password`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email }),
-      });
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.detail || 'Password reset request failed');
-      }
-      
-      return true;
-    } catch (err) {
-      setError(err.message || 'Failed to send reset email. Please try again.');
+      setError(err.message || 'An error occurred during registration');
       throw err;
     } finally {
       setIsLoading(false);
@@ -264,16 +207,108 @@ export const AuthProvider = ({ children }) => {
 
   // Logout function
   const logout = async () => {
+    setIsLoading(true);
+    
     try {
-      setIsLoading(true);
+      console.log('Logging out user:', user?.email);
       
-      // Clear storage
+      // First remove token from AsyncStorage
       await AsyncStorage.removeItem('token');
-      await AsyncStorage.removeItem('user');
+      console.log('Token cleared from AsyncStorage');
       
+      // Then remove user data
+      await AsyncStorage.removeItem('user');
+      console.log('User data cleared from AsyncStorage');
+      
+      // Finally update state
+      setToken(null);
       setUser(null);
+      setIsPremium(false);
+      console.log('User logged out successfully');
     } catch (err) {
-      setError(err.message);
+      console.error('Error during logout:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Reset password function
+  const resetPassword = async (email) => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      await authService.resetPassword(email);
+      return true;
+    } catch (err) {
+      setError(err.message || 'An error occurred during password reset');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Google login function
+  const googleLogin = async (token) => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const response = await authService.googleLogin(token);
+      
+      const { access_token } = response;
+      const userData = {
+        email: response.email,
+        name: response.name,
+        id: response.id || response.user_id,
+        username: response.username || response.email,
+        isPremium: response.isPremium || false
+      };
+      
+      // Store token and user data
+      await AsyncStorage.setItem('token', access_token);
+      await AsyncStorage.setItem('user', JSON.stringify(userData));
+      
+      setToken(access_token);
+      setUser(userData);
+      setIsPremium(userData.isPremium || false);
+      return { user: userData, token: access_token };
+    } catch (err) {
+      setError(err.message || 'An error occurred during Google login');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Apple login function
+  const appleLogin = async (identityToken, fullName) => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const response = await authService.appleLogin(identityToken, fullName);
+      
+      const { access_token } = response;
+      const userData = {
+        email: response.email,
+        name: response.name,
+        id: response.id || response.user_id,
+        username: response.username || response.email,
+        isPremium: response.isPremium || false
+      };
+      
+      // Store token and user data
+      await AsyncStorage.setItem('token', access_token);
+      await AsyncStorage.setItem('user', JSON.stringify(userData));
+      
+      setToken(access_token);
+      setUser(userData);
+      setIsPremium(userData.isPremium || false);
+      return { user: userData, token: access_token };
+    } catch (err) {
+      setError(err.message || 'An error occurred during Apple login');
+      throw err;
     } finally {
       setIsLoading(false);
     }
@@ -281,79 +316,60 @@ export const AuthProvider = ({ children }) => {
 
   // Delete account function
   const deleteAccount = async () => {
+    setIsLoading(true);
+    setError(null);
+    
     try {
-      setIsLoading(true);
-      setError(null);
+      await authService.deleteAccount();
       
-      // Get token
-      const token = await AsyncStorage.getItem('token');
-      
-      if (!token) {
-        throw new Error('Authentication token not found');
-      }
-      
-      console.log('Attempting to delete account...');
-      
-      // Call API to delete account
-      const response = await fetch(`${getAuthApiUrl()}/auth/delete-account`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-      
-      console.log('Delete account response status:', response.status);
-      
-      if (!response.ok) {
-        let errorMessage = 'Failed to delete account';
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.detail || errorData.message || errorMessage;
-          console.error('Delete account error response:', errorData);
-        } catch (jsonError) {
-          console.error('Error parsing error response:', jsonError);
-          // If we can't parse the JSON, try to get the text
-          try {
-            const errorText = await response.text();
-            console.error('Error response text:', errorText);
-          } catch (textError) {
-            console.error('Error getting response text:', textError);
-          }
-        }
-        throw new Error(errorMessage);
-      }
-      
-      console.log('Account deleted successfully');
-      
-      // Clear storage
-      await AsyncStorage.removeItem('token');
-      await AsyncStorage.removeItem('user');
-      
+      // Clear user data and token
+      setToken(null);
       setUser(null);
+      setIsPremium(false);
+      
       return true;
     } catch (err) {
-      console.error('Delete account error:', err);
-      setError(err.message || 'Failed to delete account. Please try again.');
+      setError(err.message || 'An error occurred while deleting your account');
       throw err;
     } finally {
       setIsLoading(false);
     }
   };
 
+  // Clear error function
+  const clearError = () => {
+    setError(null);
+  };
+
   // Context value
   const value = {
     user,
+    token,
     isLoading,
     error,
+    isAuthenticated: !!token,
+    isInitialized,
+    isPremium,
     login,
-    register,
-    googleLogin,
-    resetPassword,
     logout,
+    register,
+    resetPassword,
+    googleLogin,
+    appleLogin,
     deleteAccount,
-    isAuthenticated: !!user,
+    clearError,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}; 
+};
+
+// Custom hook to use the auth context
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};
+
+export default AuthContext; 

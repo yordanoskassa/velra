@@ -11,7 +11,8 @@ import {
   Keyboard,
   ActivityIndicator,
   Alert,
-  ScrollView
+  ScrollView,
+  Dimensions
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
@@ -143,6 +144,7 @@ const RegisterScreen = () => {
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
+        <View style={styles.backgroundOverlay} />
         <ScrollView contentContainerStyle={styles.scrollContainer}>
           {/* Back Button */}
           <Motion.View
@@ -162,9 +164,11 @@ const RegisterScreen = () => {
             style={styles.backButtonContainer}
           >
             <TouchableOpacity onPress={goBack} style={styles.backButton}>
-              <Ionicons name="arrow-back" size={24} color="white" />
+              <Ionicons name="arrow-back" size={24} color="#000000" />
             </TouchableOpacity>
           </Motion.View>
+
+          {/* Logo - Removed */}
 
           {/* Header */}
           <Motion.View
@@ -184,6 +188,7 @@ const RegisterScreen = () => {
             }}
             style={styles.headerContainer}
           >
+            <Text style={styles.welcomeText}>Create Account</Text>
             <Text style={styles.headerText}>
               {step === 1 
                 ? "What's your name?" 
@@ -346,7 +351,8 @@ const RegisterScreen = () => {
                   <Checkbox
                     status={disclaimerAccepted ? 'checked' : 'unchecked'}
                     onPress={() => setDisclaimerAccepted(!disclaimerAccepted)}
-                    color="#007AFF"
+                    color="#000000"
+                    style={styles.checkbox}
                   />
                   <Text style={styles.checkboxLabel}>
                     I understand and agree that this app does not provide financial advice
@@ -445,50 +451,80 @@ const RegisterScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: '#FFFFFF',
+  },
+  backgroundOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    zIndex: 0,
   },
   scrollContainer: {
     flexGrow: 1,
-    padding: 20,
+    paddingHorizontal: 24,
+    paddingBottom: 40,
+    paddingTop: 60,
   },
   backButtonContainer: {
     alignItems: 'flex-start',
     marginBottom: 20,
+    marginTop: 20,
   },
   backButton: {
     width: 40,
     height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(245, 245, 245, 0.9)',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   headerContainer: {
-    marginBottom: 30,
+    marginBottom: 40,
+    marginTop: 10,
+  },
+  welcomeText: {
+    fontSize: 18,
+    color: '#000000',
+    fontWeight: '600',
+    marginBottom: 8,
   },
   headerText: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 8,
+    color: '#000000',
+    marginBottom: 12,
   },
   subHeaderText: {
     fontSize: 16,
-    color: '#CCCCCC',
-    opacity: 0.8,
+    color: '#555555',
+    lineHeight: 22,
+    opacity: 0.9,
   },
   inputContainer: {
     marginBottom: 20,
   },
   input: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 10,
-    padding: 15,
+    backgroundColor: 'rgba(245, 245, 245, 0.9)',
+    borderRadius: 8,
+    padding: 16,
     fontSize: 16,
-    color: '#FFFFFF',
+    color: '#333333',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: '#DDDDDD',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   errorText: {
-    color: '#FFFFFF',
+    color: '#FF3B30',
     marginTop: 5,
     fontSize: 14,
   },
@@ -496,18 +532,23 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   button: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    padding: 15,
+    backgroundColor: '#000000',
+    borderRadius: 8,
+    padding: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   buttonDisabled: {
     opacity: 0.7,
   },
   buttonText: {
-    color: '#000000',
-    fontSize: 16,
+    color: '#FFFFFF',
+    fontSize: 17,
     fontWeight: 'bold',
   },
   loginContainer: {
@@ -515,11 +556,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loginText: {
-    color: '#CCCCCC',
+    color: '#333333',
     fontSize: 14,
   },
   loginLink: {
-    color: '#FFFFFF',
+    color: '#000000',
     fontWeight: 'bold',
   },
   disclaimerContainer: {
@@ -527,34 +568,49 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   disclaimerBox: {
-    backgroundColor: '#f8f8f8',
-    borderRadius: 10,
-    padding: 20,
+    backgroundColor: 'rgba(245, 245, 245, 0.9)',
+    borderRadius: 8,
+    padding: 24,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#DDDDDD',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   disclaimerTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 10,
-    color: '#333',
+    marginBottom: 12,
+    color: '#000000',
   },
   disclaimerText: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: '#555',
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#444444',
     marginBottom: 20,
   },
   checkboxContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    borderRadius: 6,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#000000',
   },
   checkboxLabel: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#333',
     marginLeft: 8,
     flex: 1,
+    fontWeight: '500',
+  },
+  checkbox: {
+    borderWidth: 1,
+    borderColor: '#000000',
+    borderRadius: 3,
   },
 });
 

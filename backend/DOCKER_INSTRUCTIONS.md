@@ -65,6 +65,20 @@ If port 8000 is already in use, you can specify a different port:
 
 The script will also automatically detect if the default port (8000) is in use and offer to use the next available port.
 
+### Force Mode
+
+If you want to forcefully kill any process using port 8000 (or your specified port):
+
+```bash
+# Force kill any process using port 8000 and deploy
+./deploy.sh 8000 force
+
+# Force kill any process using port 8001 and deploy on that port
+./deploy.sh 8001 force
+```
+
+Use this option with caution as it will terminate any process using the specified port without confirmation.
+
 ## Environment Variables
 
 The backend requires several environment variables to be set. These can be provided in a `.env` file:
@@ -126,4 +140,6 @@ If you encounter issues:
 2. Verify environment variables are correctly set
 3. Ensure MongoDB is accessible from the container
 4. Check network connectivity between services
-5. If you get a "port is already allocated" error, use a different port as described above 
+5. If you get a "port is already allocated" error:
+   - Use a different port: `./deploy.sh 8001`
+   - Use force mode to kill the process using the port: `./deploy.sh 8000 force` 

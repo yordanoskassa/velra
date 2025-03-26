@@ -1,29 +1,41 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Provider as PaperProvider } from 'react-native-paper';
 import { useFonts, Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
+import { IMFellEnglish_400Regular } from '@expo-google-fonts/im-fell-english';
+import { IMFellDWPica_400Regular } from '@expo-google-fonts/im-fell-dw-pica';
+import { PlayfairDisplay_700Bold } from '@expo-google-fonts/playfair-display';
+import { CourierPrime_400Regular } from '@expo-google-fonts/courier-prime';
+import { NotoSerif_400Regular } from '@expo-google-fonts/noto-serif';
 import * as SplashScreen from 'expo-splash-screen';
 import { View, Text, ActivityIndicator } from 'react-native';
 import 'react-native-gesture-handler';
 import { enableScreens } from 'react-native-screens';
+import { Syne_800ExtraBold } from '@expo-google-fonts/syne';
+import { Raleway_400Regular, Raleway_500Medium, Raleway_600SemiBold } from '@expo-google-fonts/raleway';
 
 // Import screens
-import NewsScreen from './src/screens/NewsScreen';
+import ArticleDetailsScreen from './src/screens/ArticleDetailsScreen';
 import WelcomeScreen from './src/screens/WelcomeScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
-import ArticleDetailsScreen from './src/screens/ArticleDetailsScreen';
-import ProfileScreen from './src/screens/ProfileScreen';
-import SettingsScreen from './src/screens/SettingsScreen';
 import TermsOfService from './src/screens/TermsOfService';
 import PrivacyPolicy from './src/screens/PrivacyPolicy';
+import SubscriptionScreen from './src/screens/SubscriptionScreen';
+
+// Import navigation
+import BottomTabNavigator from './src/navigation/BottomTabNavigator';
 
 // Import theme and context
 import theme from './src/theme';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
+import { SavedArticlesProvider } from './src/context/SavedArticlesContext';
+
+// Import the SubscriptionProvider
+import { SubscriptionProvider } from './src/context/SubscriptionContext';
 
 const Stack = createNativeStackNavigator();
 
@@ -42,52 +54,6 @@ function ErrorFallback({ error }) {
   );
 }
 
-// Auth Stack - screens for non-authenticated users
-function AuthStack() {
-  return (
-    <Stack.Navigator
-      screenOptions={{
-        headerShown: false,
-        contentStyle: { backgroundColor: '#000000' },
-      }}
-    >
-      <Stack.Screen name="Welcome" component={WelcomeScreen} />
-      <Stack.Screen name="Login" component={LoginScreen} />
-      <Stack.Screen name="Register" component={RegisterScreen} />
-    </Stack.Navigator>
-  );
-}
-
-// App Stack - screens for authenticated users
-function AppStack() {
-  return (
-    <Stack.Navigator
-      screenOptions={{
-        headerShown: false,
-        contentStyle: { backgroundColor: '#FFFFFF' },
-      }}
-    >
-      <Stack.Screen name="News" component={NewsScreen} />
-      <Stack.Screen 
-        name="ArticleDetails" 
-        component={ArticleDetailsScreen}
-        options={{ 
-          headerShown: true, 
-          title: '',
-          headerStyle: {
-            backgroundColor: '#1a237e',
-          },
-          headerTintColor: '#fff',
-        }}
-      />
-      <Stack.Screen name="Profile" component={ProfileScreen} />
-      <Stack.Screen name="Settings" component={SettingsScreen} />
-      <Stack.Screen name="TermsOfService" component={TermsOfService} />
-      <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicy} />
-    </Stack.Navigator>
-  );
-}
-
 // Main navigator that handles authentication state
 function RootNavigator() {
   const { user, isLoading } = useAuth();
@@ -96,13 +62,7 @@ function RootNavigator() {
 
   // Log when user state changes
   React.useEffect(() => {
-    console.log('RootNavigator: User state changed:', user ? `Logged in as ${user.email}` : 'Logged out');
-    
-    if (user) {
-      console.log('RootNavigator: User is authenticated, showing AppStack');
-    } else {
-      console.log('RootNavigator: User is not authenticated, showing AuthStack');
-    }
+    console.log('RootNavigator: User state changed:', user ? `Logged in as ${user.email}` : 'Not logged in');
   }, [user]);
 
   // Handle navigation state change
@@ -123,15 +83,62 @@ function RootNavigator() {
     );
   }
 
-  console.log('RootNavigator: Rendering with user:', user ? `Authenticated as ${user.email}` : 'Not authenticated');
-
+  // Create a combined stack with both auth and app screens
   return (
     <NavigationContainer 
       ref={navigationRef}
       onStateChange={onNavigationStateChange}
     >
       <StatusBar style="light" />
-      {user ? <AppStack /> : <AuthStack />}
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: '#FFFFFF' },
+        }}
+      >
+        {/* Main App with Bottom Tabs */}
+        <Stack.Screen name="MainApp" component={BottomTabNavigator} />
+        
+        {/* Other Screens */}
+        <Stack.Screen 
+          name="ArticleDetails" 
+          component={ArticleDetailsScreen}
+          options={{ 
+            headerShown: true, 
+            title: '',
+            headerStyle: {
+              backgroundColor: '#1a237e',
+            },
+            headerTintColor: '#fff',
+          }}
+        />
+        <Stack.Screen name="TermsOfService" component={TermsOfService} />
+        <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicy} />
+        <Stack.Screen name="Subscription" component={SubscriptionScreen} />
+        
+        {/* Auth Screens */}
+        <Stack.Screen 
+          name="Welcome" 
+          component={WelcomeScreen}
+          options={{
+            contentStyle: { backgroundColor: '#000000' },
+          }}
+        />
+        <Stack.Screen 
+          name="Login" 
+          component={LoginScreen}
+          options={{
+            contentStyle: { backgroundColor: '#000000' },
+          }}
+        />
+        <Stack.Screen 
+          name="Register" 
+          component={RegisterScreen}
+          options={{
+            contentStyle: { backgroundColor: '#000000' },
+          }}
+        />
+      </Stack.Navigator>
     </NavigationContainer>
   );
 }
@@ -141,12 +148,24 @@ function App() {
     Inter_400Regular,
     Inter_600SemiBold,
     Inter_700Bold,
+    OldEnglish: Syne_800ExtraBold,
+    'CourierPrime-Regular': CourierPrime_400Regular,
+    'TimesNewRoman': NotoSerif_400Regular,
+    'Raleway-Regular': Raleway_400Regular,
+    'Raleway-Medium': Raleway_500Medium,
+    'Raleway-SemiBold': Raleway_600SemiBold
   });
 
   const [error, setError] = React.useState(null);
+  
+  // Add a log to show app initialization
+  React.useEffect(() => {
+    console.log('App initialized');
+  }, []);
 
   React.useEffect(() => {
     if (fontsLoaded) {
+      console.log('Fonts loaded, hiding splash screen');
       // Hide the splash screen after the fonts have loaded and the UI is ready
       SplashScreen.hideAsync().catch(() => {
         // Ignore errors hiding splash screen
@@ -168,12 +187,19 @@ function App() {
     );
   }
 
+  // Log the app structure being rendered
+  console.log('Rendering app with auth and saved articles providers');
+
   // Main app with error handling
   return (
     <SafeAreaProvider>
       <PaperProvider theme={theme}>
         <AuthProvider>
-          <RootNavigator />
+          <SavedArticlesProvider>
+            <SubscriptionProvider>
+              <RootNavigator />
+            </SubscriptionProvider>
+          </SavedArticlesProvider>
         </AuthProvider>
       </PaperProvider>
     </SafeAreaProvider>

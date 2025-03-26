@@ -22,6 +22,15 @@ class Settings(BaseSettings):
     NEWS_API_KEY: Optional[str] = None
     RAPIDAPI_KEY: Optional[str] = None
     RAPIDAPI_HOST: Optional[str] = "real-time-news-data.p.rapidapi.com"
+    
+    # RevenueCat Configuration
+    REVENUECAT_API_KEY: Optional[str] = None
+    REVENUECAT_WEBHOOK_SECRET: Optional[str] = None
+    VERIFY_REVENUECAT_WEBHOOK: bool = True
+    
+    # Monitoring Configuration
+    SENTRY_DSN: Optional[str] = None
+    API_BASE_URL: Optional[str] = "http://localhost:8001"
 
     class Config:
         env_file = ".env"

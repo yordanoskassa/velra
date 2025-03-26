@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,85 +8,72 @@ import {
   ActivityIndicator,
   Image,
   Linking,
+  ScrollView,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
+import { useSubscription } from '../context/SubscriptionContext';
 import { Ionicons } from '@expo/vector-icons';
 import { Motion } from '@legendapp/motion';
-import Constants from 'expo-constants';
-import { Platform } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-// Get the API URL from environment variables or use a default
-const API_URL = Constants.expoConfig?.extra?.apiUrl || 'http://localhost:8000';
-
-// For iOS simulator, we need to use localhost instead of 127.0.0.1
-const getApiUrl = () => {
-  // If we're on iOS simulator, replace localhost with the special IP for simulator
-  if (Platform.OS === 'ios' && API_URL.includes('localhost')) {
-    return API_URL.replace('localhost', '127.0.0.1');
-  }
-  return API_URL;
-};
+import GridBackground from '../components/GridBackground';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const ProfileScreen = ({ navigation }) => {
-  const { user, logout, deleteAccount, isLoading } = useAuth();
-  const [deleteLoading, setDeleteLoading] = useState(false);
+  const insets = useSafeAreaInsets();
+  const { user, logout, isLoading } = useAuth();
+  const { 
+    isSubscribed, 
+    isLoading: subscriptionLoading,
+    showCustomPaywall,
+  } = useSubscription();
+  
+  const [isDeleting, setIsDeleting] = useState(false);
+  
+  // Handle opening the premium paywall
+  const handlePremiumUpgrade = async () => {
+    try {
+      if (!user) {
+        // If user is not logged in, redirect to login first
+        navigation.navigate('Login', {
+          message: 'Please log in to access premium features',
+          redirectAfterLogin: true,
+          redirectRoute: 'Profile'
+        });
+        return;
+      }
+      
+      // If user is logged in, show paywall
+      await showCustomPaywall(navigation);
+    } catch (error) {
+      console.error('Error upgrading to Premium:', error);
+      Alert.alert(
+        'Error',
+        'There was a problem processing your subscription. Please try again later.'
+      );
+    }
+  };
 
   const handleLogout = async () => {
     await logout();
+    // Navigate to Welcome screen
     navigation.reset({
       index: 0,
       routes: [{ name: 'Welcome' }],
     });
   };
 
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      'Delete Account',
-      'Are you sure you want to delete your account? This action cannot be undone.',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: confirmDeleteAccount,
-        },
-      ],
-      { cancelable: true }
-    );
-  };
-
-  const confirmDeleteAccount = async () => {
-    try {
-      setDeleteLoading(true);
-      await deleteAccount();
-      
-      // Navigate back to welcome screen
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Welcome' }],
-      });
-    } catch (error) {
-      console.error('Delete account error:', error);
-      Alert.alert('Error', error.message || 'Failed to delete account. Please try again.');
-    } finally {
-      setDeleteLoading(false);
-    }
-  };
-
-  if (isLoading || deleteLoading) {
+  if (isLoading || subscriptionLoading || isDeleting) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#FFFFFF" />
+        <ActivityIndicator size="large" color="#000000" />
+        <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={{flexGrow: 1}}>
+      <GridBackground />
+      
       <Motion.View
         animate={{
           opacity: 1,
@@ -101,16 +88,18 @@ const ProfileScreen = ({ navigation }) => {
           damping: 20,
           stiffness: 300,
         }}
-        style={styles.header}
+        style={[styles.header, { paddingTop: insets.top }]}
       >
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backButton}
-        >
-          <Ionicons name="arrow-back" size={24} color="#000000" />
-        </TouchableOpacity>
         <Text style={styles.headerTitle}>Profile</Text>
-        <View style={styles.placeholder} />
+
+        <View style={styles.headerButtons}>
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={() => navigation.navigate('Settings')}
+          >
+            <Ionicons name="settings-outline" size={24} color="#000000" />
+          </TouchableOpacity>
+        </View>
       </Motion.View>
 
       <Motion.View
@@ -133,18 +122,145 @@ const ProfileScreen = ({ navigation }) => {
         <View style={styles.avatarContainer}>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>
-              {user?.name?.charAt(0) || user?.email?.charAt(0) || '?'}
+              {user ? (user.name?.charAt(0) || user.email?.charAt(0)) : "N"}
             </Text>
           </View>
         </View>
 
         <View style={styles.infoContainer}>
-          <Text style={styles.nameText}>{user?.name || 'User'}</Text>
-          <Text style={styles.emailText}>{user?.email || 'No email'}</Text>
+          <Text style={styles.nameText}>{user ? (user.name || 'User') : 'Not logged in yet'}</Text>
+          <Text style={styles.emailText}>{user ? user.email : 'Login to access your profile'}</Text>
+          
+          {/* Stats Row */}
+          <View style={styles.statsContainer}>
+            {/* Activity Stats */}
+            <View style={styles.statItem}>
+              <View style={styles.statIconContainer}>
+                <Ionicons name="bar-chart-outline" size={18} color="#4F46E5" />
+              </View>
+              <View style={styles.statTextContainer}>
+                <Text style={styles.statValue}>Active</Text>
+                <Text style={styles.statLabel}>Status</Text>
+              </View>
+            </View>
+
+            {/* Membership Badge */}
+            <View style={styles.statItem}>
+              <View style={[styles.statIconContainer, {backgroundColor: isSubscribed ? '#FFF9E0' : '#E8E8FF'}]}>
+                <Ionicons name={isSubscribed ? 'star' : 'diamond-outline'} size={18} color={isSubscribed ? '#FFD700' : '#4F46E5'} />
+              </View>
+              <View style={styles.statTextContainer}>
+                <Text style={[styles.statValue, {color: isSubscribed ? '#FFD700' : '#4F46E5'}]}>
+                  {isSubscribed ? 'Premium' : 'Free'}
+                </Text>
+                <Text style={styles.statLabel}>Membership</Text>
+              </View>
+            </View>
+          </View>
+          
+          {/* User Tier Badge - Only show if logged in */}
+          {user && (
+            <View style={styles.badgeContainer}>
+              <Motion.View
+                animate={{
+                  scale: 1,
+                  opacity: 1,
+                }}
+                initial={{
+                  scale: 0.8,
+                  opacity: 0,
+                }}
+                transition={{
+                  type: 'spring',
+                  damping: 20,
+                  stiffness: 300,
+                  delay: 0.3,
+                }}
+              >
+                <View style={[styles.badge, { backgroundColor: isSubscribed ? '#FFD700' : '#4F46E5' }]}>
+                  <Ionicons 
+                    name={isSubscribed ? 'star' : 'diamond-outline'} 
+                    size={14} 
+                    color="#FFFFFF" 
+                    style={styles.badgeIcon} 
+                  />
+                  <Text style={styles.badgeText}>
+                    {isSubscribed ? 'PREMIUM' : 'FREE TIER'}
+                  </Text>
+                </View>
+              </Motion.View>
+            </View>
+          )}
+          
+          {/* Guest Badge - Show when not logged in */}
+          {!user && (
+            <View style={styles.badgeContainer}>
+              <Motion.View
+                animate={{
+                  scale: 1,
+                  opacity: 1,
+                }}
+                initial={{
+                  scale: 0.8,
+                  opacity: 0,
+                }}
+                transition={{
+                  type: 'spring',
+                  damping: 20,
+                  stiffness: 300,
+                  delay: 0.3,
+                }}
+              >
+                <View style={[styles.badge, { backgroundColor: "#9E9E9E" }]}>
+                  <Ionicons name="person-outline" size={14} color="#FFFFFF" style={styles.badgeIcon} />
+                  <Text style={styles.badgeText}>NOT LOGGED IN</Text>
+                </View>
+              </Motion.View>
+            </View>
+          )}
         </View>
 
         <View style={styles.actionsContainer}>
-          {/* Remove all the settings options from here */}
+          {/* Premium Subscription Button - Show for non-subscribers */}
+          {!isSubscribed && (
+            <TouchableOpacity
+              style={styles.premiumButton}
+              onPress={handlePremiumUpgrade}
+            >
+              <Ionicons name="star" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={styles.premiumButtonText}>Upgrade to Premium</Text>
+            </TouchableOpacity>
+          )}
+          
+          {/* Show Premium Status if Subscribed */}
+          {isSubscribed && (
+            <View style={styles.premiumStatusContainer}>
+              <Ionicons name="checkmark-circle" size={20} color="#FFD700" style={{ marginRight: 8 }} />
+              <Text style={styles.premiumStatusText}>Premium Subscription Active</Text>
+            </View>
+          )}
+          
+          {/* Logout Button */}
+          {user && (
+            <TouchableOpacity 
+              style={styles.logoutButton} 
+              onPress={handleLogout}
+            >
+              <Ionicons name="log-out-outline" size={20} color="#000000" style={{ marginRight: 8 }} />
+              <Text style={styles.logoutButtonText}>Logout</Text>
+            </TouchableOpacity>
+          )}
+          
+          {/* Login Button for Non-Logged In Users */}
+          {!user && (
+            <TouchableOpacity 
+              style={styles.loginButton} 
+              onPress={() => navigation.navigate('Login')}
+            >
+              <Ionicons name="log-in-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={styles.loginButtonText}>Login / Create Account</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </Motion.View>
 
@@ -165,15 +281,7 @@ const ProfileScreen = ({ navigation }) => {
           All content in this app is for informational purposes only and should not be considered as financial advice.
         </Text>
       </Motion.View>
-
-      <TouchableOpacity
-        style={styles.settingsButton}
-        onPress={() => navigation.navigate('Settings')}
-      >
-        <Ionicons name="settings-outline" size={20} color="#FFFFFF" />
-        <Text style={styles.buttonText}>Settings</Text>
-      </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 };
 
@@ -188,135 +296,218 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 20,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
     color: '#000000',
   },
-  placeholder: {
-    width: 40,
-  },
-  profileContainer: {
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 30,
+    paddingBottom: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#000000',
+    fontFamily: 'Inter-Bold',
+  },
+  headerButtons: {
+    flexDirection: 'row',
+  },
+  headerButton: {
+    padding: 8,
+  },
+  profileContainer: {
+    flex: 1,
+    padding: 20,
   },
   avatarContainer: {
-    marginBottom: 20,
+    alignItems: 'center',
+    marginBottom: 16,
   },
   avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#000000',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#4F46E5',
     justifyContent: 'center',
     alignItems: 'center',
   },
   avatarText: {
-    fontSize: 40,
-    fontWeight: 'bold',
     color: '#FFFFFF',
+    fontSize: 32,
+    fontWeight: 'bold',
+    fontFamily: 'Inter-Bold',
   },
   infoContainer: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 24,
   },
   nameText: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#000000',
-    marginBottom: 5,
+    fontFamily: 'Inter-Bold',
+    marginBottom: 4,
   },
   emailText: {
     fontSize: 16,
-    color: '#000000',
+    color: '#666666',
+    fontFamily: 'Inter-Regular',
+    marginBottom: 12,
+  },
+  badgeContainer: {
+    marginTop: 8,
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  badgeIcon: {
+    marginRight: 4,
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 12,
+    fontFamily: 'Inter-Bold',
   },
   actionsContainer: {
-    width: '100%',
-    marginBottom: 30,
+    marginTop: 8,
   },
-  logoutButton: {
-    flexDirection: 'row',
-    backgroundColor: '#333333',
-    borderRadius: 10,
-    padding: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 15,
-  },
-  deleteButton: {
-    flexDirection: 'row',
-    backgroundColor: '#FF3B30',
-    borderRadius: 10,
-    padding: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginLeft: 10,
-  },
-  disclaimerContainer: {
-    padding: 20,
-    marginTop: 'auto',
-  },
-  disclaimerText: {
-    fontSize: 12,
-    color: '#000000',
-    textAlign: 'center',
-    paddingHorizontal: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#000000',
-    marginBottom: 15,
-  },
-  legalButton: {
-    flexDirection: 'row',
-    backgroundColor: '#333333',
-    borderRadius: 10,
-    padding: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 15,
-  },
-  helpButton: {
-    flexDirection: 'row',
-    backgroundColor: '#333333',
-    borderRadius: 10,
-    padding: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  settingsButton: {
+  premiumButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#000000',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    position: 'absolute',
-    bottom: 30,
-    right: 20,
+    paddingVertical: 14,
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    marginBottom: 16,
   },
+  premiumButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    fontFamily: 'Inter-Bold',
+  },
+  premiumStatusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F9F7F0',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    marginBottom: 24,
+  },
+  premiumStatusText: {
+    color: '#000000',
+    fontSize: 16,
+    fontWeight: 'bold',
+    fontFamily: 'Inter-SemiBold',
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F5F5F5',
+    paddingVertical: 12,
+    borderRadius: 10,
+    marginTop: 16,
+  },
+  logoutButtonText: {
+    color: '#000000',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  loginButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#4F46E5',
+    paddingVertical: 14,
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    marginBottom: 16,
+  },
+  loginButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    fontFamily: 'Inter-Bold',
+  },
+  disclaimerContainer: {
+    padding: 16,
+    paddingBottom: 24,
+  },
+  disclaimerText: {
+    fontSize: 12,
+    color: '#666666',
+    textAlign: 'center',
+    fontFamily: 'Inter-Regular',
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 16,
+    marginBottom: 8,
+    width: '100%',
+  },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  statIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#E8E8FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  statTextContainer: {
+    flexDirection: 'column',
+  },
+  statValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#4F46E5',
+    fontFamily: 'Inter-Bold',
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#666666',
+    fontFamily: 'Inter-Regular',
+  }
 });
 
 export default ProfileScreen;
