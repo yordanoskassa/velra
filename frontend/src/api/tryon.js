@@ -292,7 +292,7 @@ export const startVirtualTryOn = async (modelImageUri, garmentImageUri, options 
     console.log('Making try-on request with form data...');
     
     // Set a longer timeout for this request since it involves file uploads
-    const response = await api.post('/virtual-tryon/try-async', formData, {
+    const response = await api.post('/api/virtual-tryon/try-async', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
         'Authorization': `Bearer ${authToken}`
@@ -366,7 +366,7 @@ export const startVirtualTryOn = async (modelImageUri, garmentImageUri, options 
 export const checkTryOnStatus = async (predictionId) => {
   try {
     console.log(`Checking status for prediction ID: ${predictionId}`);
-    const response = await api.get(`/virtual-tryon/status/${predictionId}`);
+    const response = await api.get(`/api/virtual-tryon/status/${predictionId}`);
     console.log(`Status response:`, response.data);
     
     // Process result_url if it's an array - take the first item
@@ -476,7 +476,7 @@ export const getTryOnUsage = async () => {
     // The backend automatically handles:
     // - Daily limit reset at midnight
     // - Monthly limit reset at the end of each month
-    const response = await api.get('/virtual-tryon/usage', {
+    const response = await api.get('/api/virtual-tryon/usage', {
       headers: {
         'Authorization': `Bearer ${authToken}`
       }

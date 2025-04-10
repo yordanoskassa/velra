@@ -2,8 +2,8 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Default API URL - overridden via AsyncStorage
-let CACHED_API_URL = 'https://decodr-api.onrender.com';
+// Default API URL - using production endpoint
+export const CACHED_API_URL = 'https://velra.onrender.com';
 
 // For development, allow running the app without a backend
 let USE_MOCK_API = false;
@@ -66,61 +66,9 @@ loadApiUrl();
  * @returns {string} The base API URL
  */
 export const getApiUrl = () => {
-  // If mock API is enabled, return a special URL
-  if (USE_MOCK_API) {
-    console.log('Using mock API mode - backend calls will be intercepted');
-    return 'mock://api';
-  }
-  
-  // Special handling for web platform to avoid CORS issues
-  if (Platform.OS === 'web') {
-    console.log('Web platform detected, using special configuration');
-    
-    // First, try to detect if we're running in development or production
-    const isLocalDevelopment = window.location.hostname === 'localhost' || 
-                              window.location.hostname === '127.0.0.1';
-    
-    if (isLocalDevelopment) {
-      // In local development, we can use the proxy configured in package.json
-      console.log('Local development detected, using proxy via relative URL');
-      return '';
-    } else {
-      // In production or other environments, we need the full URL
-      // You may need to ensure CORS is enabled on your backend
-      console.log('Production or external environment detected, using full URL');
-      return CACHED_API_URL;
-    }
-  }
-  
-  // For physical device testing with Render API
-  // Don't include the trailing slash in the URL
-  const RENDER_API_URL = CACHED_API_URL;
-  
-  // FORCE_API: Set to true to always use Render API URL regardless of device
-  const FORCE_API = true;
-  
-  // ALWAYS use Render API URL when on a physical device
-  // Constants.isDevice will be true when running on physical device
-  const isPhysicalDevice = Constants.isDevice;
-  
-  // Use Render API URL when on a physical device or when forced, otherwise use localhost
-  let API_URL = FORCE_API || isPhysicalDevice ? 
-    RENDER_API_URL : 
-    (Constants.expoConfig?.extra?.apiUrl ?? 'http://localhost:8001');
-
-  // Handle localhost for emulators (only applies if not using Render API)
-  if (API_URL.includes('localhost')) {
-    if (Platform.OS === 'android') {
-      API_URL = API_URL.replace('localhost', '10.0.2.2');
-    } else if (Platform.OS === 'ios') {
-      API_URL = API_URL.replace('localhost', '127.0.0.1');
-    }
-  }
-
-  console.log('Force API:', FORCE_API);
-  console.log('Device is physical:', isPhysicalDevice);
-  console.log('Base API URL:', API_URL);
-  return API_URL;
+  // Use production URL for all platforms
+  console.log('Using production API URL:', CACHED_API_URL);
+  return CACHED_API_URL;
 };
 
 /**
@@ -128,7 +76,10 @@ export const getApiUrl = () => {
  * @returns {string} The auth API URL
  */
 export const getAuthApiUrl = () => {
-  const authUrl = `${getApiUrl()}/auth`;
+  const baseUrl = getApiUrl();
+  // Remove any trailing slashes, but make sure to use the /api/auth path format
+  const cleanBaseUrl = baseUrl.replace(/\/+$/, '');
+  const authUrl = `${cleanBaseUrl}/api/auth`;
   console.log('Auth API URL:', authUrl);
   return authUrl;
 };
@@ -145,9 +96,37 @@ export const getNewsApiUrl = () => `${getApiUrl()}/news`;
  */
 export const getStocksApiUrl = () => `${getApiUrl()}/stocks`;
 
+/**
+ * Test the API connection to verify it's working
+ * @returns {Promise<boolean>} Whether the API is accessible
+ */
+export const testApiConnection = async () => {
+  try {
+    const apiUrl = getApiUrl();
+    console.log('Testing API connection to:', apiUrl);
+    
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+    
+    const data = await response.json();
+    console.log('API response:', data);
+    
+    // Successful connection
+    return true;
+  } catch (error) {
+    console.error('API connection test failed:', error);
+    return false;
+  }
+};
+
 export default {
   getApiUrl,
   getAuthApiUrl,
   getNewsApiUrl,
-  getStocksApiUrl
+  getStocksApiUrl,
+  testApiConnection
 };
