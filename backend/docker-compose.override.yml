@@ -1,6 +1,0 @@
-version: '3.8'
-
-services:
-  backend:
-    environment:
-      - MONGODB_URL=${MONGODB_URL} 
