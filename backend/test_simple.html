@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple Virtual Try-On Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    input, select {
+      width: 100%;
+      padding: 8px;
+      box-sizing: border-box;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      padding: 10px 15px;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    .preview-images {
+      display: flex;
+      gap: 20px;
+      margin-top: 20px;
+    }
+    .preview-container {
+      flex: 1;
+    }
+    .preview-img {
+      max-width: 100%;
+      max-height: 300px;
+      border: 1px solid #ddd;
+    }
+    #result {
+      margin-top: 20px;
+      padding: 15px;
+      border: 1px solid #ddd;
+      background-color: #f9f9f9;
+      white-space: pre-wrap;
+    }
+    #statusCheck {
+      margin-top: 20px;
+      display: none;
+    }
+    #resultImage {
+      max-width: 100%;
+      margin-top: 20px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <h1>Simple Virtual Try-On Test</h1>
+  <p>This page uses the public test endpoints that don't require authentication</p>
+  
+  <form id="tryonForm">
+    <div class="form-group">
+      <label for="apiUrl">API URL:</label>
+      <input type="text" id="apiUrl" name="apiUrl" value="https://79dd-64-85-147-243.ngrok-free.app" placeholder="Enter your API URL">
+    </div>
+
+    <div class="form-group">
+      <label for="modelImage">Model Image (person):</label>
+      <input type="file" id="modelImage" name="modelImage" accept="image/*" required>
+    </div>
+    
+    <div class="form-group">
+      <label for="garmentImage">Garment Image (clothing):</label>
+      <input type="file" id="garmentImage" name="garmentImage" accept="image/*" required>
+    </div>
+    
+    <div class="preview-images">
+      <div class="preview-container">
+        <h3>Model Preview</h3>
+        <img id="modelPreview" class="preview-img" src="" alt="Model preview">
+      </div>
+      <div class="preview-container">
+        <h3>Garment Preview</h3>
+        <img id="garmentPreview" class="preview-img" src="" alt="Garment preview">
+      </div>
+    </div>
+    
+    <div class="form-group">
+      <label for="category">Category:</label>
+      <select id="category" name="category">
+        <option value="auto">Auto (detect)</option>
+        <option value="tops">Tops</option>
+        <option value="bottoms">Bottoms</option>
+        <option value="dresses">Dresses</option>
+        <option value="outerwear">Outerwear</option>
+      </select>
+    </div>
+    
+    <div class="form-group">
+      <label for="mode">Mode:</label>
+      <select id="mode" name="mode">
+        <option value="balanced">Balanced</option>
+        <option value="quality">Quality</option>
+        <option value="speed">Speed</option>
+      </select>
+    </div>
+    
+    <div class="form-group">
+      <label>
+        <input type="checkbox" id="adjustHands" name="adjustHands" checked>
+        Adjust Hands
+      </label>
+    </div>
+    
+    <div class="form-group">
+      <label>
+        <input type="checkbox" id="coverFeet" name="coverFeet">
+        Cover Feet
+      </label>
+    </div>
+    
+    <button type="submit">Start Try-On</button>
+  </form>
+  
+  <div id="statusCheck">
+    <h2>Try-On Status</h2>
+    <div id="statusInfo"></div>
+    <button id="checkStatusBtn">Check Status</button>
+  </div>
+  
+  <div id="result"></div>
+  <img id="resultImage" src="" alt="Try-on result">
+  
+  <script>
+    // Display image previews
+    document.getElementById('modelImage').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          document.getElementById('modelPreview').src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+    
+    document.getElementById('garmentImage').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          document.getElementById('garmentPreview').src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+    
+    // Store the prediction ID for status checks
+    let currentPredictionId = null;
+    
+    // Submit the form
+    document.getElementById('tryonForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      
+      const resultDiv = document.getElementById('result');
+      resultDiv.textContent = 'Processing...';
+      
+      const apiUrl = document.getElementById('apiUrl').value.trim();
+      const modelImage = document.getElementById('modelImage').files[0];
+      const garmentImage = document.getElementById('garmentImage').files[0];
+      const category = document.getElementById('category').value;
+      const mode = document.getElementById('mode').value;
+      const adjustHands = document.getElementById('adjustHands').checked;
+      const coverFeet = document.getElementById('coverFeet').checked;
+      
+      // Create form data
+      const formData = new FormData();
+      formData.append('model_image', modelImage);
+      formData.append('garment_image', garmentImage);
+      formData.append('category', category);
+      formData.append('mode', mode);
+      formData.append('adjust_hands', adjustHands);
+      formData.append('cover_feet', coverFeet);
+      formData.append('moderation_level', 'permissive');
+      
+      try {
+        const response = await fetch(`${apiUrl}/virtual-tryon/test`, {
+          method: 'POST',
+          body: formData
+        });
+        
+        const data = await response.json();
+        resultDiv.textContent = JSON.stringify(data, null, 2);
+        
+        if (data.id) {
+          currentPredictionId = data.id;
+          document.getElementById('statusCheck').style.display = 'block';
+          document.getElementById('statusInfo').textContent = `Prediction ID: ${data.id}\nStatus: ${data.status}\nETA: ${data.eta || 'Unknown'} seconds`;
+          
+          // Auto-check status after the estimated time
+          if (data.eta) {
+            setTimeout(() => {
+              checkStatus();
+            }, (data.eta + 2) * 1000); // Add 2 seconds buffer
+          }
+        }
+      } catch (error) {
+        resultDiv.textContent = `Error: ${error.message}`;
+      }
+    });
+    
+    // Check status button
+    document.getElementById('checkStatusBtn').addEventListener('click', checkStatus);
+    
+    // Function to check status
+    async function checkStatus() {
+      if (!currentPredictionId) {
+        alert('No prediction ID available');
+        return;
+      }
+      
+      const apiUrl = document.getElementById('apiUrl').value.trim();
+      const statusInfo = document.getElementById('statusInfo');
+      
+      try {
+        const response = await fetch(`${apiUrl}/virtual-tryon/test-status/${currentPredictionId}`, {
+          method: 'GET'
+        });
+        
+        const data = await response.json();
+        document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+        
+        statusInfo.textContent = `Prediction ID: ${data.id}\nStatus: ${data.status}`;
+        
+        if (data.status === 'completed' && data.result_url) {
+          statusInfo.textContent += `\nResult is ready!`;
+          
+          // Show the result image
+          const resultImage = document.getElementById('resultImage');
+          resultImage.src = data.result_url;
+          resultImage.style.display = 'block';
+        } else if (data.status === 'failed') {
+          statusInfo.textContent += `\nError: ${data.error || 'Unknown error'}`;
+        } else if (data.eta) {
+          statusInfo.textContent += `\nETA: ${data.eta} seconds`;
+          
+          // Auto-check again after the ETA
+          setTimeout(() => {
+            checkStatus();
+          }, (data.eta + 2) * 1000); // Add 2 seconds buffer
+        }
+      } catch (error) {
+        statusInfo.textContent = `Error checking status: ${error.message}`;
+      }
+    }
+
+    // Show that the page is loaded
+    console.log('Test page loaded successfully');
+  </script>
+</body>
+</html> 
