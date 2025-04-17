@@ -110,11 +110,25 @@ class UserEngagement(BaseModel):
 
 # Model to track virtual try-on API usage
 class TryonUsage(BaseModel):
-    user_id: str
+    user_id: Optional[str] = None
+    device_id: Optional[str] = None
     daily_count: int = 0
+    monthly_count: int = 0
     total_count: int = 0
-    last_reset: datetime = Field(default_factory=datetime.utcnow)
+    last_reset_daily: datetime = Field(default_factory=datetime.utcnow)
+    last_reset_monthly: datetime = Field(default_factory=datetime.utcnow)
     last_used: datetime = Field(default_factory=datetime.utcnow)
     
     class Config:
         orm_mode = True
+
+class DeviceBasedRequest(BaseModel):
+    device_id: str
+    app_version: Optional[str] = None
+    device_model: Optional[str] = None
+    os_version: Optional[str] = None
+    sync_only: Optional[bool] = False
+    force_db_check: Optional[bool] = False
+    check_only: Optional[bool] = False
+    is_subscribed: Optional[bool] = False
+    current_counts: Optional[Dict[str, int]] = Field(default_factory=dict)
