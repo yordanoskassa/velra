@@ -116,15 +116,8 @@
     
     <div class="form-group">
       <label>
-        <input type="checkbox" id="adjustHands" name="adjustHands" checked>
-        Adjust Hands
-      </label>
-    </div>
-    
-    <div class="form-group">
-      <label>
-        <input type="checkbox" id="coverFeet" name="coverFeet">
-        Cover Feet
+        <input type="checkbox" id="segmentationFree" name="segmentationFree" checked>
+        Segmentation Free (better try-on accuracy, but might not fully remove existing garments)
       </label>
     </div>
     
@@ -179,8 +172,7 @@
       const garmentImage = document.getElementById('garmentImage').files[0];
       const category = document.getElementById('category').value;
       const mode = document.getElementById('mode').value;
-      const adjustHands = document.getElementById('adjustHands').checked;
-      const coverFeet = document.getElementById('coverFeet').checked;
+      const segmentationFree = document.getElementById('segmentationFree').checked;
       
       // Create form data
       const formData = new FormData();
@@ -188,8 +180,7 @@
       formData.append('garment_image', garmentImage);
       formData.append('category', category);
       formData.append('mode', mode);
-      formData.append('adjust_hands', adjustHands);
-      formData.append('cover_feet', coverFeet);
+      formData.append('segmentation_free', segmentationFree ? 'true' : 'false');
       formData.append('moderation_level', 'permissive');
       
       try {
