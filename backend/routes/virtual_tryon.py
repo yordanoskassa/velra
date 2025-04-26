@@ -248,369 +248,183 @@ async def start_virtual_try_on(
     category: str = Form("auto"),
     mode: str = Form("balanced"),
     moderation_level: str = Form("permissive"),
+    # Keep accepting deprecated parameters but ignore them
     cover_feet: str = Form("false"),
     adjust_hands: str = Form("true"),
+    restore_background: str = Form("false"),
+    restore_clothes: str = Form("false"),
+    long_top: str = Form("false"),
+    # Add new parameter with default value
+    segmentation_free: str = Form("true"),
     background_tasks: BackgroundTasks = BackgroundTasks(),
     user_id: str = Depends(get_user_id),
     db = Depends(get_database)
 ):
     """Start a virtual try-on and return a prediction ID to check status"""
     
-    # Get user subscription status and usage data
-    usage_collection = db[settings.DB_NAME]["tryon_usage"]
-    usage = await usage_collection.find_one({"user_id": user_id})
-    
-    # Check if user exists in subscription database
-    subscription_collection = db[settings.DB_NAME]["subscriptions"]
-    subscription = await subscription_collection.find_one({"user_id": user_id})
-    is_subscribed = subscription is not None and subscription.get("status", "") == "active"
-    
-    # Simple usage logic
-    if usage:
-        daily_count = usage.get("daily_count", 0)
-        monthly_count = usage.get("monthly_count", 0)
-        
-        # Reset monthly count if it's a new month
-        now = datetime.utcnow()
-        first_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        last_reset_monthly = usage.get("last_reset_monthly", first_of_month)
-        
-        if isinstance(last_reset_monthly, datetime) and last_reset_monthly.date().month < now.date().month:
-            monthly_count = 0
-            await usage_collection.update_one(
-                {"user_id": user_id},
-                {"$set": {"monthly_count": 0, "last_reset_monthly": first_of_month}}
-            )
-        
-        # 1. If not subscribed and daily count >= 1, show paywall
-        if not is_subscribed and daily_count >= 1:
+    # Check permissions
+    can_try_on, daily_limit, monthly_limit, daily_count, monthly_count, limit_reason = await check_tryon_limit(user_id, db)
+    if not can_try_on:
+        if limit_reason == "MONTHLY_LIMIT_REACHED":
             raise HTTPException(
-                status_code=403,
-                detail="Upgrade to PRO for unlimited daily try-ons!"
+                status_code=403, 
+                detail=f"Monthly limit reached: {monthly_count}/{monthly_limit}. Please upgrade your plan for more try-ons."
             )
-        
-        # 2. If monthly count >= 40, show limit message (for both free and pro)
-        if monthly_count >= 40:
+        else:  # DAILY_LIMIT_REACHED
             raise HTTPException(
-                status_code=403,
-                detail="You've reached your monthly limit. Try again next month!"
+                status_code=403, 
+                detail=f"Daily limit reached: {daily_count}/{daily_limit}. Please try again tomorrow or upgrade your plan."
             )
-            
-        logger.info(f"User {user_id} usage: daily={daily_count}, monthly={monthly_count}/40, subscribed={is_subscribed}")
-    else:
-        # First time user, we'll create usage record after the try-on
-        daily_count = 0
-        monthly_count = 0
-    
-    if not settings.FASHN_API_KEY:
-        raise HTTPException(
-            status_code=500,
-            detail="Virtual try-on service is not properly configured"
-        )
-    
-    # For debugging
-    logger.info(f"FASHN API KEY: {settings.FASHN_API_KEY[:5]}...")
     
     try:
-        logger.info(f"Processing try-on with model image: {model_image.filename} and garment image: {garment_image.filename}")
+        # Process uploaded files
+        model_data = await model_image.read()
+        garment_data = await garment_image.read()
         
-        # Convert the boolean string parameters to actual booleans
-        cover_feet_bool = cover_feet.lower() == "true"
-        adjust_hands_bool = adjust_hands.lower() == "true"
+        # Check image sizes and dimensions (simplified example)
+        if len(model_data) > 10 * 1024 * 1024 or len(garment_data) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Image size exceeds 10MB limit")
         
-        # Read file contents into memory
-        model_content = await model_image.read()
-        garment_content = await garment_image.read()
+        # Convert to API-compatible format
+        from utils.image_utils import convert_to_data_uri
+        model_uri = convert_to_data_uri(model_data)
+        garment_uri = convert_to_data_uri(garment_data)
         
-        logger.info(f"Read model image: {len(model_content)} bytes")
-        logger.info(f"Read garment image: {len(garment_content)} bytes")
-        
-        # Create temporary files
-        model_temp_path = f"/tmp/model_{time.time()}.jpg"
-        garment_temp_path = f"/tmp/garment_{time.time()}.jpg"
-        
-        # Make sure the /tmp directory exists
-        os.makedirs("/tmp", exist_ok=True)
-        
-        # Write the files to disk
-        with open(model_temp_path, "wb") as f:
-            f.write(model_content)
-        
-        with open(garment_temp_path, "wb") as f:
-            f.write(garment_content)
+        # Make API call to FASHN
+        # First, validate API key
+        if not settings.FASHN_API_KEY:
+            raise HTTPException(
+                status_code=500,
+                detail="FASHN API key is not configured. Please contact support."
+            )
             
-        logger.info(f"Saved temporary files to {model_temp_path} and {garment_temp_path}")
-            
+        logger.info(f"FASHN API KEY: {settings.FASHN_API_KEY[:5]}...")
+        
+        # Prepare the API request
+        segmentation_free_bool = segmentation_free.lower() == "true"
+        
+        # Get user data to check premium status
+        users_collection = db[settings.DB_NAME]["users"]
+        user = await users_collection.find_one({"_id": user_id})
+        is_premium = user.get("isPremium", False) if user else False
+        
+        # Track usage in the background
+        background_tasks.add_task(track_tryon_usage, user_id, is_premium, db)
+        
+        # Try multiple approaches to find the one that works with the FASHN API
+        # Approach 1: With stringified booleans
         try:
-            # Use Python's requests library
             import requests
             
-            # Try multiple approaches to find the one that works with the FASHN API
-            with open(model_temp_path, 'rb') as model_file, open(garment_temp_path, 'rb') as garment_file:
-                try:
-                    logger.info("Attempting API call with multipart/form-data approach")
-                    
-                    # First approach: Standard multipart/form-data
-                    files = {
-                        'model_image': ('model.jpg', model_file, 'image/jpeg'),
-                        'garment_image': ('garment.jpg', garment_file, 'image/jpeg')
-                    }
-                    
-                    data = {
+            fashn_response = requests.post(
+                "https://api.fashn.ai/v1/run",
+                json={
+                    'model_image': model_uri,
+                    'garment_image': garment_uri,
+                    'category': category,
+                    'mode': mode,
+                    'moderation_level': moderation_level,
+                    'segmentation_free': str(segmentation_free_bool).lower()
+                },
+                headers={
+                    "Authorization": f"Bearer {settings.FASHN_API_KEY}"
+                },
+                timeout=30
+            )
+            
+            if fashn_response.status_code == 400:
+                # Approach 2: With actual boolean values (not stringified)
+                logger.info("First attempt failed, trying with actual boolean values")
+                
+                fashn_response = requests.post(
+                    "https://api.fashn.ai/v1/run",
+                    json={
+                        'model_image': model_uri,
+                        'garment_image': garment_uri,
                         'category': category,
                         'mode': mode,
                         'moderation_level': moderation_level,
-                        'cover_feet': str(cover_feet_bool).lower(),
-                        'adjust_hands': str(adjust_hands_bool).lower()
-                    }
+                        'segmentation_free': segmentation_free_bool
+                    },
+                    headers={
+                        "Authorization": f"Bearer {settings.FASHN_API_KEY}",
+                        "Content-Type": "application/json"
+                    },
+                    timeout=30
+                )
+                
+                if fashn_response.status_code == 400:
+                    # Approach 3: Use string parameter names as shown in docs
+                    logger.info("Second attempt failed, trying with image field names")
                     
                     fashn_response = requests.post(
                         "https://api.fashn.ai/v1/run",
-                        files=files,
-                        data=data,
-                        headers={
-                            "Authorization": f"Bearer {settings.FASHN_API_KEY}"
-                        },
-                        timeout=60
-                    )
-                    
-                    # If first approach fails with 400, try the second approach
-                    if fashn_response.status_code == 400:
-                        logger.info("First approach failed. Trying with JSON payload and base64 encoded images")
-                        
-                        # Reset file positions
-                        model_file.seek(0)
-                        garment_file.seek(0)
-                        
-                        # Read and encode the files as base64
-                        import base64
-                        model_base64 = base64.b64encode(model_file.read()).decode('utf-8')
-                        garment_file.seek(0)
-                        garment_base64 = base64.b64encode(garment_file.read()).decode('utf-8')
-                        
-                        # Create JSON payload - add data URI prefix for base64 images
-                        json_payload = {
-                            'model_image': f"data:image/jpeg;base64,{model_base64}",
-                            'garment_image': f"data:image/jpeg;base64,{garment_base64}",
+                        json={
+                            'model_image': model_uri,
+                            'garment_image': garment_uri,
                             'category': category,
                             'mode': mode,
                             'moderation_level': moderation_level,
-                            'cover_feet': cover_feet_bool,
-                            'adjust_hands': adjust_hands_bool
-                        }
-                        
-                        # Make the request with JSON payload
-                        fashn_response = requests.post(
-                            "https://api.fashn.ai/v1/run",
-                            json=json_payload,
-                            headers={
-                                "Authorization": f"Bearer {settings.FASHN_API_KEY}",
-                                "Content-Type": "application/json"
-                            },
-                            timeout=60
-                        )
-                        
-                        # If second approach fails, try a third approach with URL parameters
-                        if fashn_response.status_code == 400:
-                            logger.info("Second approach failed. Trying with URL parameters")
-                            
-                            # Prepare multipart for files only
-                            files = {
-                                'model_image': ('model.jpg', open(model_temp_path, 'rb'), 'image/jpeg'),
-                                'garment_image': ('garment.jpg', open(garment_temp_path, 'rb'), 'image/jpeg')
-                            }
-                            
-                            # Add parameters to the URL
-                            params = {
-                                'category': category,
-                                'mode': mode,
-                                'moderation_level': moderation_level,
-                                'cover_feet': str(cover_feet_bool).lower(),
-                                'adjust_hands': str(adjust_hands_bool).lower()
-                            }
-                            
-                            fashn_response = requests.post(
-                                "https://api.fashn.ai/v1/run",
-                                files=files,
-                                params=params,
-                                headers={
-                                    "Authorization": f"Bearer {settings.FASHN_API_KEY}"
-                                },
-                                timeout=60
-                            )
-                except Exception as e:
-                    logger.error(f"Error during API request: {str(e)}")
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"Error communicating with try-on service: {str(e)}"
+                            'segmentation_free': str(segmentation_free_bool).lower()
+                        },
+                        headers={
+                            "Authorization": f"Bearer {settings.FASHN_API_KEY}"
+                        },
+                        timeout=30
                     )
             
-            # Debug response
+            # Process the response
             logger.info(f"FASHN API response status: {fashn_response.status_code}")
             logger.info(f"FASHN API response headers: {fashn_response.headers}")
             logger.info(f"FASHN API response body: {fashn_response.text[:500]}...")
             
-            # Check response
+            # Check for errors
             if fashn_response.status_code != 200:
                 logger.error(f"FASHN API error: {fashn_response.status_code}, {fashn_response.text}")
-                error_detail = "Failed to start virtual try-on"
+                
                 try:
                     error_json = fashn_response.json()
-                    if isinstance(error_json, dict) and 'error' in error_json:
-                        error_detail = error_json['error']
-                    elif isinstance(error_json, dict) and 'message' in error_json:
-                        error_detail = error_json['message']
-                except:
-                    pass
-                    
-                raise HTTPException(
-                    status_code=500,
-                    detail=error_detail
-                )
-                
-            # Parse the response
+                    error_message = error_json.get("error", {}).get("message", "Unknown error")
+                    logger.error(f"FASHN error message: {error_message}")
+                    raise HTTPException(status_code=500, detail=f"FASHN API error: {error_message}")
+                except Exception as e:
+                    logger.error(f"Error parsing FASHN error response: {str(e)}")
+                    raise HTTPException(status_code=500, detail="Error processing virtual try-on request")
+            
+            # Parse successful response
             result = fashn_response.json()
             
-        finally:
-            # Clean up temporary files
-            try:
-                if os.path.exists(model_temp_path):
-                    os.remove(model_temp_path)
-                if os.path.exists(garment_temp_path):
-                    os.remove(garment_temp_path)
-                logger.info("Cleaned up temporary files")
-            except Exception as e:
-                logger.error(f"Failed to clean up temporary files: {str(e)}")
-        
-        # Get prediction ID from response
-        prediction_id = result.get("id")
-        
-        if not prediction_id:
-            raise HTTPException(
-                status_code=500,
-                detail="Invalid response from try-on service"
-            )
+            # Save prediction details to database for status checking
+            predictions_collection = db[settings.DB_NAME]["tryon_predictions"]
+            await predictions_collection.insert_one({
+                "prediction_id": result["id"],
+                "user_id": user_id,
+                "created_at": datetime.utcnow(),
+                "status": result["status"],
+                "request_data": {
+                    "category": category,
+                    "mode": mode,
+                    "moderation_level": moderation_level,
+                    "segmentation_free": segmentation_free
+                }
+            })
             
-        # We need to track device usage directly in the database BEFORE returning the response
-        # This ensures the count is immediately updated and prevents exceeding the limit
-        if device_id:
-            try:
-                # Get current usage data
-                usage_collection = db[settings.DB_NAME]["tryon_usage"]
-                usage = await usage_collection.find_one({"device_id": device_id})
-                
-                now = datetime.utcnow()
-                today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-                first_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-                
-                if not usage:
-                    # Create new usage record
-                    new_usage = {
-                        "device_id": device_id,
-                        "user_id": None,  # Anonymous user
-                        "daily_count": 1,
-                        "monthly_count": 1,
-                        "total_count": 1,
-                        "last_reset_daily": today,
-                        "last_reset_monthly": first_of_month,
-                        "last_used": now
-                    }
-                    await usage_collection.insert_one(new_usage)
-                    logger.info(f"Created new usage record for device {device_id}")
-                else:
-                    # Update existing usage record
-                    update_fields = {"last_used": now}
-                    increment_fields = {}
-                    
-                    # Check if we need to reset counts
-                    last_reset_daily = usage.get("last_reset_daily", usage.get("last_reset", now))
-                    if isinstance(last_reset_daily, datetime) and last_reset_daily.date() < today.date():
-                        update_fields["daily_count"] = 1
-                        update_fields["last_reset_daily"] = today
-                    else:
-                        # CRITICAL: Increment by exactly 1
-                        increment_fields["daily_count"] = 1
-                    
-                    last_reset_monthly = usage.get("last_reset_monthly", first_of_month)
-                    if isinstance(last_reset_monthly, datetime) and last_reset_monthly.date().month < now.date().month:
-                        update_fields["monthly_count"] = 1
-                        update_fields["last_reset_monthly"] = first_of_month
-                    else:
-                        # CRITICAL: Increment by exactly 1
-                        increment_fields["monthly_count"] = 1
-                    
-                    # Always increment total count by exactly 1
-                    increment_fields["total_count"] = 1
-                    
-                    # Update the record
-                    if update_fields and increment_fields:
-                        await usage_collection.update_one(
-                            {"device_id": device_id},
-                            {
-                                "$set": update_fields,
-                                "$inc": increment_fields
-                            }
-                        )
-                    elif update_fields:
-                        await usage_collection.update_one(
-                            {"device_id": device_id},
-                            {"$set": update_fields}
-                        )
-                    elif increment_fields:
-                        await usage_collection.update_one(
-                            {"device_id": device_id},
-                            {"$inc": increment_fields}
-                        )
-                    
-                    logger.info(f"Updated usage record for device {device_id}")
-                    
-                    # Get the updated counts to verify
-                    updated_usage = await usage_collection.find_one({"device_id": device_id})
-                    if updated_usage:
-                        logger.info(f"Updated counts: daily={updated_usage.get('daily_count', 0)}, monthly={updated_usage.get('monthly_count', 0)}")
-                        
-                        # CRITICAL: Double-check if we've reached the monthly limit AFTER incrementing
-                        if updated_usage.get('monthly_count', 0) > 40:
-                            logger.error(f"CRITICAL: Device {device_id} has exceeded monthly limit: {updated_usage.get('monthly_count', 0)}/40")
-                            # Force update to exactly 40 to prevent further exceeding
-                            await usage_collection.update_one(
-                                {"device_id": device_id},
-                                {"$set": {"monthly_count": 40}}
-                            )
-            except Exception as e:
-                logger.error(f"Error tracking device usage: {str(e)}", exc_info=True)
-        
-        # Store the prediction in the database
-        predictions_collection = db[settings.DB_NAME]["tryon_predictions"]
-        await predictions_collection.insert_one({
-            "id": prediction_id,
-            "user_id": user_id,
-            "status": "pending",
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
-            "params": {
-                "model_image_name": model_image.filename,
-                "garment_image_name": garment_image.filename,
-                "category": category,
-                "mode": mode
+            return {
+                "id": result["id"],
+                "status": result["status"],
+                "eta": result.get("eta"),
+                "result_url": result.get("output")
             }
-        })
-        
-        return {
-            "id": prediction_id,
-            "status": "pending",
-            "eta": result.get("eta", 15)  # Default ETA of 15 seconds if not provided
-        }
-        
+            
+        except Exception as e:
+            logger.error(f"Error calling FASHN API: {str(e)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Error processing virtual try-on request: {str(e)}")
+    
     except HTTPException:
-        # Re-raise HTTP exceptions
         raise
     except Exception as e:
         logger.error(f"Error in virtual try-on: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to start virtual try-on: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error processing virtual try-on request: {str(e)}")
 
 @tryon_router.get("/status/{prediction_id}", response_model=TryOnResponse)
 async def check_try_on_status(
@@ -1266,8 +1080,7 @@ async def test_virtual_try_on(
     category: str = Form("auto"),
     mode: str = Form("balanced"),
     moderation_level: str = Form("permissive"),
-    cover_feet: str = Form("false"),
-    adjust_hands: str = Form("true"),
+    segmentation_free: str = Form("true"),
     skip_usage_tracking: str = Form("false"),
     device_id: Optional[str] = Form(None),
     is_subscribed: Optional[str] = Form("false"),
@@ -1365,12 +1178,16 @@ async def test_virtual_try_on(
                         'garment_image': ('garment.jpg', garment_file, 'image/jpeg')
                     }
                     
+                    # Convert boolean string parameters to booleans
+                    segmentation_free_bool = segmentation_free.lower() == "true"
+                    
+                    # Include deprecated parameters for backward compatibility
+                    # but use the new segmentation_free parameter for the actual API call
                     data = {
                         'category': category,
                         'mode': mode,
                         'moderation_level': moderation_level,
-                        'cover_feet': str(cover_feet_bool).lower(),
-                        'adjust_hands': str(adjust_hands_bool).lower()
+                        'segmentation_free': str(segmentation_free_bool).lower()
                     }
                     
                     fashn_response = requests.post(
@@ -1404,8 +1221,7 @@ async def test_virtual_try_on(
                             'category': category,
                             'mode': mode,
                             'moderation_level': moderation_level,
-                            'cover_feet': cover_feet_bool,
-                            'adjust_hands': adjust_hands_bool
+                            'segmentation_free': segmentation_free_bool
                         }
                         
                         # Make the request with JSON payload
@@ -1434,8 +1250,7 @@ async def test_virtual_try_on(
                                 'category': category,
                                 'mode': mode,
                                 'moderation_level': moderation_level,
-                                'cover_feet': str(cover_feet_bool).lower(),
-                                'adjust_hands': str(adjust_hands_bool).lower()
+                                'segmentation_free': str(segmentation_free_bool).lower()
                             }
                             
                             fashn_response = requests.post(
