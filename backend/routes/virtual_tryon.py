@@ -10,6 +10,7 @@ import aiofiles
 import os
 import tempfile
 import requests
+import math
 
 from config import settings
 from database import get_database
@@ -187,8 +188,12 @@ async def check_tryon_limit(user_id: str, db=Depends(get_database)):
         is_premium = user.get("isPremium", False) if user else False
         
         # Set limits based on user type
-        daily_limit = 40 if is_premium else 1   # PRO users don't have daily limit, free users get 1/day
-        monthly_limit = 40  # Both free and PRO users have 40/month limit
+        if is_premium:
+            daily_limit = float('inf')   # no daily limit for subscribers
+            monthly_limit = 30          # subscribers get 30 per month
+        else:
+            daily_limit = 1             # free users get 1 per day
+            monthly_limit = float('inf') # no monthly limit for free users
         
         # Get current usage
         usage_collection = db[settings.DB_NAME]["tryon_usage"]
@@ -231,7 +236,7 @@ async def check_tryon_limit(user_id: str, db=Depends(get_database)):
             return False, daily_limit, monthly_limit, daily_count, monthly_count, "DAILY_LIMIT_REACHED"
             
         # Check if they've reached their monthly limit (for all users)
-        if monthly_count >= monthly_limit:
+        if is_premium and monthly_count >= monthly_limit:
             return False, daily_limit, monthly_limit, daily_count, monthly_count, "MONTHLY_LIMIT_REACHED"
             
         return True, daily_limit, monthly_limit, daily_count, monthly_count, None
@@ -255,7 +260,7 @@ async def start_virtual_try_on(
     restore_clothes: str = Form("false"),
     long_top: str = Form("false"),
     # Add new parameter with default value
-    segmentation_free: str = Form("true"),
+    segmentation_free: str = Form("false"),
     background_tasks: BackgroundTasks = BackgroundTasks(),
     user_id: str = Depends(get_user_id),
     db = Depends(get_database)
@@ -267,13 +272,13 @@ async def start_virtual_try_on(
     if not can_try_on:
         if limit_reason == "MONTHLY_LIMIT_REACHED":
             raise HTTPException(
-                status_code=403, 
-                detail=f"Monthly limit reached: {monthly_count}/{monthly_limit}. Please upgrade your plan for more try-ons."
+                status_code=429, 
+                detail=f"Monthly limit reached: {monthly_count}/{monthly_limit}. Please wait until the end of the month."
             )
         else:  # DAILY_LIMIT_REACHED
             raise HTTPException(
-                status_code=403, 
-                detail=f"Daily limit reached: {daily_count}/{daily_limit}. Please try again tomorrow or upgrade your plan."
+                status_code=402, 
+                detail=f"Daily limit reached: {daily_count}/{daily_limit}. Please subscribe for more try-ons."
             )
     
     try:
@@ -576,8 +581,12 @@ async def get_try_on_usage(
         is_premium = user.get("isPremium", False) if user else False
         
         # Set limits based on user type
-        daily_limit = 40 if is_premium else 1  # PRO users don't have daily limit, free users get 1/day
-        monthly_limit = 40  # Both free and PRO users have 40/month limit
+        if is_premium:
+            daily_limit = float('inf')   # no daily limit for subscribers
+            monthly_limit = 30          # subscribers get 30 per month
+        else:
+            daily_limit = 1             # free users get 1 per day
+            monthly_limit = float('inf') # no monthly limit for free users
         
         # Get usage data
         usage_collection = db[settings.DB_NAME]["tryon_usage"]
@@ -609,7 +618,8 @@ async def get_try_on_usage(
             )
         
         if isinstance(last_reset_daily, datetime) and last_reset_daily.date() < today.date():
-            # It's a new day, reset the count
+            # It's a new day, so reset the count
+            daily_count = 0
             await usage_collection.update_one(
                 {"user_id": user_id},
                 {"$set": {"daily_count": 0, "last_reset_daily": today}}
@@ -622,11 +632,12 @@ async def get_try_on_usage(
                 "monthly_limit": monthly_limit
             }
         
-        # Check if we need to reset the monthly count
+        # Check if we need to reset the monthly count    
         last_reset_monthly = usage.get("last_reset_monthly", first_of_month)
+        monthly_count = usage.get("monthly_count", 0)
         
         if isinstance(last_reset_monthly, datetime) and last_reset_monthly.date().month < now.date().month:
-            # It's a new month, reset the count
+            # It's a new month, so reset the count
             monthly_count = 0
             await usage_collection.update_one(
                 {"user_id": user_id},
@@ -681,8 +692,8 @@ async def track_device_try_on_usage(
                     "daily_count": 0,
                     "monthly_count": 0,
                     "total_count": 0,
-                    "daily_limit": 1 if not is_subscribed else 40,
-                    "monthly_limit": 40,
+                    "daily_limit": 1 if not is_subscribed else float('inf'),
+                    "monthly_limit": 40,  # Same monthly cap (40) for everyone
                     "counts": {
                         "daily_count": 0,
                         "monthly_count": 0,
@@ -704,19 +715,19 @@ async def track_device_try_on_usage(
                 "device_model": device_data.device_model,
                 "os_version": device_data.os_version
             }
-            
             await usage_collection.insert_one(new_usage)
             logger.info(f"Created new usage record with counts of 1 for device {device_id}")
             
             # Set daily limit based on subscription status
-            daily_limit = 40 if is_subscribed else 1  # PRO users get 40/day, free users get 1/day
+            daily_limit = 1 if not is_subscribed else float('inf')
+            monthly_limit = 40  # Same monthly cap (40) for everyone
             
             return {
                 "daily_count": 1,
                 "monthly_count": 1,
                 "total_count": 1,
                 "daily_limit": daily_limit,
-                "monthly_limit": 40,
+                "monthly_limit": monthly_limit,
                 "counts": {
                     "daily_count": 1,
                     "monthly_count": 1,
@@ -750,8 +761,8 @@ async def track_device_try_on_usage(
             )
         
         # Set limits based on subscription status
-        daily_limit = 40 if is_subscribed else 1  # PRO users get 40/day, free users get 1/day
-        monthly_limit = 40  # Both free and PRO users have 40/month limit
+        daily_limit = 1 if not is_subscribed else float('inf')
+        monthly_limit = 40  # Same monthly cap (40) for everyone
         
         # CRITICAL CHECKS: If check_only is true, just return the current counts without incrementing
         if check_only:
@@ -772,7 +783,7 @@ async def track_device_try_on_usage(
         # Now we need to check limits and possibly increment
         
         # First check if they've reached the monthly limit (for both free and pro)
-        if monthly_count >= monthly_limit:
+        if is_subscribed and monthly_count >= monthly_limit:
             logger.warning(f"Device {device_id} has reached monthly limit: {monthly_count}/{monthly_limit}")
             return {
                 "daily_count": daily_count,
@@ -884,7 +895,7 @@ async def track_device_try_on_usage(
 async def check_device_tryon_limits(device_id: str, is_subscribed: bool, db=None):
     """Check if a device has reached its monthly try-on limit directly from the database"""
     try:
-        if not db:
+        if db is None:
             db = await get_database()
             
         logger.info(f"CRITICAL DATABASE CHECK: Checking try-on limits for device: {device_id}")
@@ -896,8 +907,8 @@ async def check_device_tryon_limits(device_id: str, is_subscribed: bool, db=None
         # If there's no usage record, this is their first try-on - let them try!
         if not usage:
             logger.info(f"No usage record found for device {device_id} - allowing first try")
-            daily_limit = 40 if is_subscribed else 1
-            monthly_limit = 40
+            daily_limit = 1 if not is_subscribed else float('inf')
+            monthly_limit = 40  # Same monthly cap (40) for everyone
             return True, daily_limit, monthly_limit, 0, 0, None
             
         now = datetime.utcnow()
@@ -929,8 +940,8 @@ async def check_device_tryon_limits(device_id: str, is_subscribed: bool, db=None
             )
         
         # Set limits based on subscription status
-        daily_limit = 40 if is_subscribed else 1   # PRO users get 40/day, free users get 1/day
-        monthly_limit = 40  # Both free and PRO users have 40/month limit
+        daily_limit = 1 if not is_subscribed else float('inf')
+        monthly_limit = 40  # Same monthly cap (40) for everyone
         
         logger.info(f"Device {device_id} usage: daily={daily_count}/{daily_limit}, monthly={monthly_count}/{monthly_limit}")
         
@@ -940,7 +951,7 @@ async def check_device_tryon_limits(device_id: str, is_subscribed: bool, db=None
             return False, daily_limit, monthly_limit, daily_count, monthly_count, "DAILY_LIMIT_REACHED"
             
         # CRITICAL CHECK: Check if they've reached their monthly limit (for all users)
-        if monthly_count >= monthly_limit:
+        if is_subscribed and monthly_count >= monthly_limit:
             logger.warning(f"Device {device_id} has reached monthly limit: {monthly_count}/{monthly_limit}")
             return False, daily_limit, monthly_limit, daily_count, monthly_count, "MONTHLY_LIMIT_REACHED"
             
@@ -1015,7 +1026,7 @@ async def check_device_usage(device_id: str, force_db: bool = False, db = Depend
                 "monthly_count": 0,
                 "total_count": 0,
                 "daily_limit": 1,  # Default for free users
-                "monthly_limit": 40,
+                "monthly_limit": 40,  # Default for free users
                 "counts": {
                     "daily_count": 0,
                     "monthly_count": 0,
@@ -1057,7 +1068,7 @@ async def check_device_usage(device_id: str, force_db: bool = False, db = Depend
             "monthly_count": monthly_count,
             "total_count": usage.get("total_count", 0),
             "daily_limit": 1,  # Default for free users
-            "monthly_limit": 40,
+            "monthly_limit": 40,  # Default for free users
             "counts": {
                 "daily_count": daily_count,
                 "monthly_count": monthly_count,
@@ -1080,7 +1091,7 @@ async def test_virtual_try_on(
     category: str = Form("auto"),
     mode: str = Form("balanced"),
     moderation_level: str = Form("permissive"),
-    segmentation_free: str = Form("true"),
+    segmentation_free: str = Form("false"),
     skip_usage_tracking: str = Form("false"),
     device_id: Optional[str] = Form(None),
     is_subscribed: Optional[str] = Form("false"),
@@ -1125,21 +1136,20 @@ async def test_virtual_try_on(
             if not has_remaining:
                 if error == "MONTHLY_LIMIT_REACHED":
                     raise HTTPException(
-                        status_code=403,
+                        status_code=429,
                         detail="You've reached your monthly limit. Try again next month!"
                     )
                 elif error == "DAILY_LIMIT_REACHED":
                     raise HTTPException(
-                        status_code=403,
+                        status_code=402,
                         detail="Upgrade to PRO for unlimited daily try-ons!"
                     )
                     
             logger.info(f"Device {device_id_value} usage: daily={daily_count}/{daily_limit}, monthly={monthly_count}/{monthly_limit}")
         
         # Convert boolean string parameters to booleans
-        cover_feet_bool = cover_feet.lower() == "true"
-        adjust_hands_bool = adjust_hands.lower() == "true"
-        
+        # Removed deprecated parameters cover_feet, adjust_hands
+
         # Read file contents into memory
         model_content = await model_image.read()
         garment_content = await garment_image.read()
@@ -1396,12 +1406,12 @@ async def test_virtual_try_on(
                         logger.info(f"Updated counts: daily={updated_usage.get('daily_count', 0)}, monthly={updated_usage.get('monthly_count', 0)}")
                         
                         # CRITICAL: Double-check if we've reached the monthly limit AFTER incrementing
-                        if updated_usage.get('monthly_count', 0) >= 40:
-                            logger.error(f"CRITICAL: Device {device_id_value} has reached monthly limit: {updated_usage.get('monthly_count', 0)}/40")
-                            # Force update to exactly 40 to prevent further exceeding
+                        if updated_usage.get('monthly_count', 0) >= 30:
+                            logger.error(f"CRITICAL: Device {device_id_value} has reached monthly limit: {updated_usage.get('monthly_count', 0)}/30")
+                            # Force update to exactly 30 to prevent further exceeding
                             await usage_collection.update_one(
                                 {"device_id": device_id_value},
-                                {"$set": {"monthly_count": 40}}
+                                {"$set": {"monthly_count": 30}}
                             )
             except Exception as e:
                 logger.error(f"Error tracking device usage: {str(e)}", exc_info=True)
@@ -1525,6 +1535,11 @@ async def test_try_on_status(prediction_id: str):
             status_code=500,
             detail=f"Failed to check test try-on status: {str(e)}"
         )
+
+@tryon_router.get("/device-status/{prediction_id}", response_model=TryOnResponse)
+async def device_status(prediction_id: str):
+    """Alias for device-based status polling."""
+    return await test_try_on_status(prediction_id)
 
 @tryon_router.post("/sync-stats")
 async def sync_device_stats(
@@ -1658,3 +1673,194 @@ async def check_device_only(device_id: str, is_subscribed: bool = False, read_on
             status_code=500,
             detail=f"Failed to check device: {str(e)}"
         ) 
+
+@tryon_router.post("/verify-limit", response_model=TryOnUsageResponse)
+async def verify_device_try_on_limit(
+    device_data: DeviceBasedRequest,
+    db = Depends(get_database)
+):
+    """Verify if a device has reached its try-on limit without incrementing counts"""
+    try:
+        logger.info(f"verify-limit endpoint called with data: {device_data}")
+        
+        device_id = device_data.device_id
+        is_subscribed = device_data.is_subscribed if device_data.is_subscribed is not None else False
+        force_db_check = device_data.force_db_check if device_data.force_db_check is not None else False
+        check_only = device_data.check_only if device_data.check_only is not None else True
+        
+        logger.info(f"Verifying try-on limits for device {device_id} (subscribed: {is_subscribed}, force_db_check: {force_db_check}, check_only: {check_only})")
+        
+        if not check_only:
+            logger.warning(f"verify-limit called with check_only=False - this endpoint should only be used for checking limits, not tracking usage")
+        
+        # Get device limits and counts without incrementing
+        result = await check_device_tryon_limits(device_id, is_subscribed, db)
+        
+        # check_device_tryon_limits returns a tuple of (can_try_on, daily_limit, monthly_limit, daily_count, monthly_count, error_reason)
+        can_try_on, daily_limit, monthly_limit, daily_count, monthly_count, error_reason = result
+        
+        logger.info(f"Device {device_id} limits check result: can_try_on={can_try_on}, daily={daily_count}/{daily_limit}, monthly={monthly_count}/{monthly_limit}, error={error_reason}")
+        
+        # Convert infinite limits to sentinel values for Pydantic validation
+        if not math.isfinite(daily_limit):
+            daily_limit = -1
+        if not math.isfinite(monthly_limit):
+            monthly_limit = -1
+        
+        # Build the response
+        total_count = 0
+        
+        # Get total count from database if available
+        usage_collection = db[settings.DB_NAME]["tryon_usage"]
+        usage = await usage_collection.find_one({"device_id": device_id})
+        if usage:
+            total_count = usage.get("total_count", 0)
+        
+        response = {
+            "daily_count": daily_count,
+            "monthly_count": monthly_count,
+            "total_count": total_count,
+            "daily_limit": daily_limit,
+            "monthly_limit": monthly_limit,
+            "counts": {
+                "daily_count": daily_count,
+                "monthly_count": monthly_count,
+                "total_count": total_count
+            }
+        }
+        
+        # Add error reason if limit reached
+        if not can_try_on:
+            response["error"] = error_reason
+            response["message"] = (
+                f"Daily limit reached: {daily_count}/{daily_limit}. Upgrade to PRO for more try-ons!"
+                if error_reason == "DAILY_LIMIT_REACHED"
+                else f"Monthly limit reached: {monthly_count}/{monthly_limit}. Try again next month!"
+            )
+        
+        logger.info(f"verify-limit response: {response}")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error verifying device try-on limit: {str(e)}", exc_info=True)
+        # Default response with no limits in case of errors
+        return {
+            "daily_count": 0,
+            "monthly_count": 0,
+            "total_count": 0,
+            "daily_limit": 1,
+            "monthly_limit": -1,
+            "counts": {
+                "daily_count": 0,
+                "monthly_count": 0,
+                "total_count": 0
+            }
+        } 
+
+@tryon_router.post("/usage-check", response_model=TryOnUsageResponse)
+async def check_device_usage_json(
+    device_data: DeviceBasedRequest,
+    db = Depends(get_database)
+):
+    """Check a device's virtual try-on usage from a JSON request body"""
+    try:
+        device_id = device_data.device_id
+        is_subscribed = device_data.is_subscribed if device_data.is_subscribed is not None else False
+        check_only = device_data.check_only if device_data.check_only is not None else True
+        
+        logger.info(f"Device usage check from JSON for: {device_id} (subscribed: {is_subscribed}, check_only: {check_only})")
+        
+        # If check_only is True, just check limits without tracking usage
+        if check_only:
+            # Use the verify-limit logic
+            result = await check_device_tryon_limits(device_id, is_subscribed, db)
+            can_try_on, daily_limit, monthly_limit, daily_count, monthly_count, error_reason = result
+            
+            # Convert infinite limits to sentinel values for Pydantic validation
+            if not math.isfinite(daily_limit):
+                daily_limit = -1
+            if not math.isfinite(monthly_limit):
+                monthly_limit = -1
+            
+            # Build the response
+            total_count = 0
+            
+            # Get total count from database if available
+            usage_collection = db[settings.DB_NAME]["tryon_usage"]
+            usage = await usage_collection.find_one({"device_id": device_id})
+            if usage:
+                total_count = usage.get("total_count", 0)
+            
+            response = {
+                "daily_count": daily_count,
+                "monthly_count": monthly_count,
+                "total_count": total_count,
+                "daily_limit": daily_limit,
+                "monthly_limit": monthly_limit,
+                "counts": {
+                    "daily_count": daily_count,
+                    "monthly_count": monthly_count,
+                    "total_count": total_count
+                }
+            }
+            
+            # Add error reason if limit reached
+            if not can_try_on:
+                response["error"] = error_reason
+                response["message"] = (
+                    f"Daily limit reached: {daily_count}/{daily_limit}. Upgrade to PRO for more try-ons!"
+                    if error_reason == "DAILY_LIMIT_REACHED"
+                    else f"Monthly limit reached: {monthly_count}/{monthly_limit}. Try again next month!"
+                )
+            
+            return response
+        else:
+            # If not check_only, use the track_device_try_on_usage function
+            return await track_device_try_on_usage(device_data, db)
+    
+    except Exception as e:
+        logger.error(f"Error checking device usage from JSON: {str(e)}", exc_info=True)
+        # Return default values in case of error
+        return {
+            "daily_count": 0,
+            "monthly_count": 0,
+            "total_count": 0,
+            "daily_limit": 1,
+            "monthly_limit": -1,
+            "counts": {
+                "daily_count": 0,
+                "monthly_count": 0,
+                "total_count": 0
+            }
+        } 
+
+@tryon_router.post("/try-device", response_model=TryOnResponse)
+async def try_device(
+    request: Request,
+    model_image: UploadFile = File(...),
+    garment_image: UploadFile = File(...),
+    category: str = Form("auto"),
+    mode: str = Form("balanced"),
+    moderation_level: str = Form("permissive"),
+    segmentation_free: str = Form("false"),
+    skip_usage_tracking: str = Form("false"),
+    device_id: Optional[str] = Form(None),
+    is_subscribed: Optional[str] = Form("false"),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    db = Depends(get_database)
+):
+    """Alias to test_virtual_try_on for anonymous users"""
+    return await test_virtual_try_on(
+        request=request,
+        model_image=model_image,
+        garment_image=garment_image,
+        category=category,
+        mode=mode,
+        moderation_level=moderation_level,
+        segmentation_free=segmentation_free,
+        skip_usage_tracking=skip_usage_tracking,
+        device_id=device_id,
+        is_subscribed=is_subscribed,
+        background_tasks=background_tasks,
+        db=db
+    )
