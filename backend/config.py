@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     # FASHN API for Virtual Try-On
     FASHN_API_KEY: Optional[str] = None
     
+    # ASOS API for Product Search (RapidAPI)
+    ASOS_API_KEY: Optional[str] = None
+    ASOS_API_HOST: Optional[str] = "asos-api6.p.rapidapi.com"
+    
     # Cloudinary Configuration for temporary image storage
     CLOUDINARY_CLOUD_NAME: Optional[str] = None
     CLOUDINARY_API_KEY: Optional[str] = None

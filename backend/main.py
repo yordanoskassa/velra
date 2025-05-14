@@ -15,6 +15,7 @@ import routes.admin
 import routes.webhooks
 import routes.notifications
 from routes.virtual_tryon import tryon_router
+from routes.products import router as products_router
 
 # Create FastAPI app instance
 app = FastAPI(title="VELRA API", 
@@ -44,6 +45,7 @@ app.add_middleware(
 # Include routers
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 app.include_router(tryon_router, tags=["Virtual Try-On"])
+app.include_router(products_router)
 
 # Add other routes
 app.include_router(routes.users.router)

@@ -115,7 +115,7 @@ async def schedule_notifications():
     # Motivational notifications at optimal engagement times
     # Morning - 9:00 AM
     scheduler.add_job(
-        lambda: asyncio.create_task(send_motivational_notifications()),
+        send_motivational_notifications,
         'cron',
         hour=9,
         minute=0
@@ -123,7 +123,7 @@ async def schedule_notifications():
     
     # Lunch time - 12:30 PM
     scheduler.add_job(
-        lambda: asyncio.create_task(send_motivational_notifications()),
+        send_motivational_notifications,
         'cron',
         hour=12,
         minute=30
@@ -131,7 +131,7 @@ async def schedule_notifications():
     
     # Evening - 6:00 PM (peak shopping time)
     scheduler.add_job(
-        lambda: asyncio.create_task(send_motivational_notifications()),
+        send_motivational_notifications,
         'cron',
         hour=18,
         minute=0
@@ -139,7 +139,7 @@ async def schedule_notifications():
     
     # Weekend bonus notification - Saturday at 11:00 AM
     scheduler.add_job(
-        lambda: asyncio.create_task(send_motivational_notifications()),
+        send_motivational_notifications,
         'cron',
         day_of_week='sat',
         hour=11,
@@ -184,11 +184,16 @@ def setup_scheduler():
     logger.info("Starting scheduler...")
     
     # Initialize notification schedules
-    asyncio.create_task(schedule_notifications())
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(schedule_notifications())
+    except RuntimeError: # No running event loop
+        # If called directly (e.g., from __main__), run it simply
+        asyncio.run(schedule_notifications())
     
     # Schedule cleanup task daily at midnight
     scheduler.add_job(
-        lambda: asyncio.create_task(cleanup_old_data()),
+        cleanup_old_data,
         'cron',
         hour=0,
         minute=0
@@ -196,7 +201,7 @@ def setup_scheduler():
     
     # Update inactive days counter daily at 1:00 AM
     scheduler.add_job(
-        lambda: asyncio.create_task(update_inactive_days()),
+        update_inactive_days,
         'cron',
         hour=1,
         minute=0
