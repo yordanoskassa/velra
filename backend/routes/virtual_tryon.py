@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File, Form, Request
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File, Form, Request, Header
 from fastapi.security import OAuth2PasswordBearer
 from typing import Optional, Dict, Any, List, Union
 from pydantic import BaseModel
@@ -63,6 +63,34 @@ async def get_user_id(token: str = Depends(oauth2_scheme), db=Depends(get_databa
     except Exception as e:
         logger.error(f"Error authenticating user: {str(e)}")
         raise HTTPException(status_code=401, detail="Could not validate credentials")
+
+async def get_optional_user_id(request: Request, db=Depends(get_database)) -> Optional[str]:
+    auth_header = request.headers.get("Authorization")
+    if auth_header:
+        parts = auth_header.split()
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            token = parts[1]
+            try:
+                from jose import jwt
+                payload = jwt.decode(
+                    token,
+                    settings.JWT_SECRET,
+                    algorithms=[settings.JWT_ALGORITHM]
+                )
+                user_id = payload.get("sub")
+                # Optionally, verify user exists in DB if needed, but for optional ID, this might be skipped.
+                # For now, just returning the sub if token is valid.
+                return user_id
+            except jwt.ExpiredSignatureError:
+                logger.debug("Optional user ID: Token expired")
+                return None
+            except jwt.JWTError as e:
+                logger.debug(f"Optional user ID: JWTError - {str(e)}")
+                return None
+            except Exception as e:
+                logger.error(f"Optional user ID: Unexpected error validating token - {str(e)}")
+                return None
+    return None
 
 # Helper function to track try-on usage
 async def track_tryon_usage(user_id: str, is_subscribed: bool = False, db=Depends(get_database)):
@@ -246,6 +274,70 @@ async def check_tryon_limit(user_id: str, db=Depends(get_database)):
         # If there's an error, allow the try-on to proceed
         return True, 40, 40, 0, 0, None
 
+# New helper function for background device tracking
+async def track_device_usage_background(device_id: str, db, is_subscribed: bool = False): # is_subscribed will be False as per new logic
+    try:
+        usage_collection = db[settings.DB_NAME]["device_tryon_usage"] # Use the device collection
+        usage = await usage_collection.find_one({"device_id": device_id})
+        
+        now = datetime.utcnow()
+        today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        first_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        
+        if not usage:
+            usage_data = {
+                "device_id": device_id,
+                "daily_count": 1,
+                "monthly_count": 1,
+                "total_count": 1,
+                "last_reset_daily": today,
+                "last_reset_monthly": first_of_month,
+                "last_used": now,
+                "is_subscribed": is_subscribed # Will be False
+            }
+            await usage_collection.insert_one(usage_data)
+            logger.info(f"Initial usage tracked for device {device_id}")
+            return
+        
+        # Reset counters if needed
+        update_fields = {"last_used": now, "is_subscribed": is_subscribed}
+        needs_update = False
+        
+        current_daily_count = usage.get("daily_count", 0)
+        last_reset_daily = usage.get("last_reset_daily", today)
+        if isinstance(last_reset_daily, datetime) and last_reset_daily.date() < today.date():
+            current_daily_count = 0 # Reset for logic below, actual DB update happens in update_fields
+            update_fields["daily_count"] = 0
+            update_fields["last_reset_daily"] = today
+            needs_update = True
+        
+        current_monthly_count = usage.get("monthly_count", 0)
+        last_reset_monthly = usage.get("last_reset_monthly", first_of_month)
+        if isinstance(last_reset_monthly, datetime) and last_reset_monthly.month < now.month:
+            current_monthly_count = 0 # Reset for logic below
+            update_fields["monthly_count"] = 0
+            update_fields["last_reset_monthly"] = first_of_month
+            needs_update = True
+            
+        if needs_update:
+            await usage_collection.update_one({"device_id": device_id}, {"$set": update_fields})
+            # Refresh counts after reset for logging if needed, though not strictly necessary for increment logic
+            # usage = await usage_collection.find_one({"device_id": device_id})
+            # current_daily_count = usage.get("daily_count", 0)
+            # current_monthly_count = usage.get("monthly_count", 0)
+
+        # Limits are checked before calling this background task. So, we just increment here.
+        increment = {"daily_count": 1, "monthly_count": 1, "total_count": 1}
+        await usage_collection.update_one({"device_id": device_id}, {"$inc": increment})
+        
+        # Log final counts for the device
+        final_usage = await usage_collection.find_one({"device_id": device_id})
+        logger.info(f"Updated usage for device {device_id}: daily={final_usage.get('daily_count',0)}, monthly={final_usage.get('monthly_count',0)}")
+
+    except Exception as e:
+        logger.error(f"Error tracking device try-on usage for {device_id} in background: {str(e)}", exc_info=True)
+        # Do not re-raise, just log.
+
 @tryon_router.post("/try-async", response_model=TryOnResponse)
 async def start_virtual_try_on(
     model_image: UploadFile = File(...),
@@ -253,34 +345,44 @@ async def start_virtual_try_on(
     category: str = Form("auto"),
     mode: str = Form("balanced"),
     moderation_level: str = Form("permissive"),
-    # Keep accepting deprecated parameters but ignore them
-    cover_feet: str = Form("false"),
-    adjust_hands: str = Form("true"),
-    restore_background: str = Form("false"),
-    restore_clothes: str = Form("false"),
-    long_top: str = Form("false"),
-    # Add new parameter with default value
     segmentation_free: str = Form("false"),
     background_tasks: BackgroundTasks = BackgroundTasks(),
-    user_id: str = Depends(get_user_id),
-    db = Depends(get_database)
+    actual_user_id: Optional[str] = Depends(get_optional_user_id), # Changed from user_id
+    device_id: str = Header(..., alias="X-Device-ID"), # Added device_id
+    db = Depends(get_database),
+    # Deprecated params (can be removed if frontend no longer sends them)
+    cover_feet: Optional[str] = Form(None),
+    adjust_hands: Optional[str] = Form(None),
+    restore_background: Optional[str] = Form(None),
+    restore_clothes: Optional[str] = Form(None),
+    long_top: Optional[str] = Form(None)
 ):
-    """Start a virtual try-on and return a prediction ID to check status"""
+    """Start a virtual try-on (now device_id based for limits) and return a prediction ID to check status"""
     
-    # Check permissions
-    can_try_on, daily_limit, monthly_limit, daily_count, monthly_count, limit_reason = await check_tryon_limit(user_id, db)
+    if not device_id:
+        raise HTTPException(status_code=400, detail="X-Device-ID header is required.")
+
+    # Check permissions based on device_id, assuming non-subscribed limits
+    can_try_on, daily_limit, monthly_limit, daily_count, monthly_count, limit_reason = await check_device_tryon_limits(device_id=device_id, is_subscribed=False, db=db)
+    
     if not can_try_on:
+        # Use more generic messages as limits are now device-based
         if limit_reason == "MONTHLY_LIMIT_REACHED":
             raise HTTPException(
-                status_code=429, 
-                detail=f"Monthly limit reached: {monthly_count}/{monthly_limit}. Please wait until the end of the month."
+                status_code=429,
+                detail=f"Device monthly limit reached ({monthly_count}/{monthly_limit}). Please try again later."
             )
-        else:  # DAILY_LIMIT_REACHED
+        elif limit_reason == "DAILY_LIMIT_REACHED":
+             raise HTTPException(
+                status_code=402, # Using 402 Payment Required, can also be 429
+                detail=f"Device daily limit reached ({daily_count}/{daily_limit}). Please try again tomorrow."
+            )
+        else: # Should not happen if reason is always set
             raise HTTPException(
-                status_code=402, 
-                detail=f"Daily limit reached: {daily_count}/{daily_limit}. Please subscribe for more try-ons."
+                status_code=429,
+                detail="Try-on limit reached for this device."
             )
-    
+            
     try:
         # Process uploaded files
         model_data = await model_image.read()
@@ -308,13 +410,8 @@ async def start_virtual_try_on(
         # Prepare the API request
         segmentation_free_bool = segmentation_free.lower() == "true"
         
-        # Get user data to check premium status
-        users_collection = db[settings.DB_NAME]["users"]
-        user = await users_collection.find_one({"_id": user_id})
-        is_premium = user.get("isPremium", False) if user else False
-        
-        # Track usage in the background
-        background_tasks.add_task(track_tryon_usage, user_id, is_premium, db)
+        # Track device usage in the background, assuming non-subscribed for device tracking
+        background_tasks.add_task(track_device_usage_background, device_id=device_id, db=db, is_subscribed=False)
         
         # Try multiple approaches to find the one that works with the FASHN API
         # Approach 1: With stringified booleans
@@ -389,11 +486,25 @@ async def start_virtual_try_on(
                 
                 try:
                     error_json = fashn_response.json()
-                    error_message = error_json.get("error", {}).get("message", "Unknown error")
-                    logger.error(f"FASHN error message: {error_message}")
-                    raise HTTPException(status_code=500, detail=f"FASHN API error: {error_message}")
+                    # Try to get a detailed message
+                    error_message = error_json.get("detail")  # Check for top-level "detail"
+                    if not error_message:
+                        error_message = error_json.get("error", {}).get("message", "Unknown error from FASHN API")
+                    
+                    logger.error(f"FASHN API error message: {error_message}")
+
+                    # Check if the error message is the specific "No module named 'log'"
+                    if "No module named 'log'" in error_message:
+                        # Log the specific FASHN API error, but return a more generic message to the client
+                        logger.error(f"FASHN API returned an internal import error: {error_message}")
+                        raise HTTPException(status_code=502, detail="Virtual try-on service is temporarily unavailable. Please try again later.")
+                    else:
+                        raise HTTPException(status_code=500, detail=f"FASHN API error: {error_message}")
+                except requests.exceptions.JSONDecodeError:
+                    logger.error(f"FASHN API returned non-JSON error: {fashn_response.text}")
+                    raise HTTPException(status_code=502, detail="Virtual try-on service returned an invalid response.")
                 except Exception as e:
-                    logger.error(f"Error parsing FASHN error response: {str(e)}")
+                    logger.error(f"Error parsing FASHN error response: {str(e)}. Original FASHN response: {fashn_response.text}")
                     raise HTTPException(status_code=500, detail="Error processing virtual try-on request")
             
             # Parse successful response
@@ -403,7 +514,8 @@ async def start_virtual_try_on(
             predictions_collection = db[settings.DB_NAME]["tryon_predictions"]
             await predictions_collection.insert_one({
                 "prediction_id": result["id"],
-                "user_id": user_id,
+                "user_id": actual_user_id, # Store the actual user_id if available, for associating result
+                "device_id": device_id,    # Store device_id as well
                 "created_at": datetime.utcnow(),
                 "status": result["status"],
                 "request_data": {
@@ -1849,18 +1961,31 @@ async def try_device(
     background_tasks: BackgroundTasks = BackgroundTasks(),
     db = Depends(get_database)
 ):
-    """Alias to test_virtual_try_on for anonymous users"""
-    return await test_virtual_try_on(
-        request=request,
-        model_image=model_image,
-        garment_image=garment_image,
-        category=category,
-        mode=mode,
-        moderation_level=moderation_level,
-        segmentation_free=segmentation_free,
-        skip_usage_tracking=skip_usage_tracking,
-        device_id=device_id,
-        is_subscribed=is_subscribed,
-        background_tasks=background_tasks,
-        db=db
-    )
+    """Endpoint for virtual try-on that doesn't require authentication"""
+    # Log the request to help with debugging
+    logger.info(f"Received try-device request with device_id: {device_id}, is_subscribed: {is_subscribed}")
+    
+    try:
+        # Call the test_virtual_try_on function directly
+        return await test_virtual_try_on(
+            request=request,
+            model_image=model_image,
+            garment_image=garment_image,
+            category=category,
+            mode=mode,
+            moderation_level=moderation_level,
+            segmentation_free=segmentation_free,
+            skip_usage_tracking=skip_usage_tracking,
+            device_id=device_id,
+            is_subscribed=is_subscribed,
+            background_tasks=background_tasks,
+            db=db
+        )
+    except Exception as e:
+        # Log the error for debugging
+        logger.error(f"Error in try-device endpoint: {str(e)}", exc_info=True)
+        # Return a more helpful error message
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing virtual try-on request: {str(e)}"
+        )

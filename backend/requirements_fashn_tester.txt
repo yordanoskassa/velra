@@ -1,4 +1,1 @@
-requests>=2.31.0
-Pillow>=9.5.0
-gradio>=3.35.0
-python-dotenv>=1.0.0 
+See now I'm at free and the usage should be always one daily try-on per day. So the issue is now worked. I did it again for a free user. As you can see the daily count is five and let me try on. Every midnight should we say the daily try-on but it should check every time the user tries on. It should make a request to check the database. If it's zero, if it's not zero, then they're not allowed. If it's zero they'll be allowed and then it would increment that into one and then when they're subscribed they can do it as many times till the monthly count is reached. This was working. I don't know why it stopped working but block the button if the user has a try-on in that day and also make it pop up the paywall like the paywall that exists in the profile section. Make it the same firewall. Trigger it whenever the user tries on again. Please make it.
