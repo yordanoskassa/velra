@@ -1,8 +1,7 @@
 import base64
 import time
 from fastapi import UploadFile
-import logging
-logger = logging.getLogger(__name__)
+from log import logger
 
 async def encode_image_to_base64(file: UploadFile) -> str:
     """
