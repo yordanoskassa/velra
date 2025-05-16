@@ -6,6 +6,7 @@ from config import settings
 from scheduler import setup_scheduler
 import uvicorn
 import logging
+import logging.handlers # Added for RotatingFileHandler
 import time
 import sentry_sdk
 
@@ -22,8 +23,30 @@ app = FastAPI(title="VELRA API",
               description="API for VELRA application",
               version="1.0.0")
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Configure logging
+LOG_FILENAME = 'backend_app.log'
+logger = logging.getLogger() # Get the root logger
+logger.setLevel(logging.INFO) # Set root logger level
+
+# Create console handler
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+
+# Create file handler
+# Rotate log file when it reaches 5MB, keep 5 backup logs
+fh = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=5*1024*1024, backupCount=5)
+fh.setLevel(logging.INFO)
+
+# Create formatter and add it to the handlers
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+fh.setFormatter(formatter)
+
+# Add the handlers to the root logger
+# Avoid adding handlers multiple times if uvicorn reloads
+if not logger.handlers:
+    logger.addHandler(ch)
+    logger.addHandler(fh)
 
 # Initialize Sentry if a DSN is provided
 if settings.SENTRY_DSN:

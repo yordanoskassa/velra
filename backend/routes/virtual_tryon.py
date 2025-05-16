@@ -594,12 +594,15 @@ async def get_try_on_usage(
         
         if not usage:
             # No usage record yet
+            # Handle potential float('inf') for Pydantic model
+            safe_daily_limit = daily_limit if daily_limit != float('inf') else 999999
+            safe_monthly_limit = monthly_limit if monthly_limit != float('inf') else 999999
             return {
                 "daily_count": 0,
                 "monthly_count": 0,
                 "total_count": 0,
-                "daily_limit": daily_limit,
-                "monthly_limit": monthly_limit
+                "daily_limit": safe_daily_limit,
+                "monthly_limit": safe_monthly_limit
             }
             
         # Check if we need to reset the daily count
@@ -624,15 +627,18 @@ async def get_try_on_usage(
                 {"user_id": user_id},
                 {"$set": {"daily_count": 0, "last_reset_daily": today}}
             )
+            # Handle potential float('inf') for Pydantic model
+            safe_daily_limit = daily_limit if daily_limit != float('inf') else 999999
+            safe_monthly_limit = monthly_limit if monthly_limit != float('inf') else 999999
             return {
                 "daily_count": 0,
                 "monthly_count": monthly_count,
                 "total_count": usage.get("total_count", 0),
-                "daily_limit": daily_limit,
-                "monthly_limit": monthly_limit
+                "daily_limit": safe_daily_limit,
+                "monthly_limit": safe_monthly_limit
             }
         
-        # Check if we need to reset the monthly count    
+        # Check if we need to reset the monthly count
         last_reset_monthly = usage.get("last_reset_monthly", first_of_month)
         monthly_count = usage.get("monthly_count", 0)
         
@@ -644,12 +650,15 @@ async def get_try_on_usage(
                 {"$set": {"monthly_count": 0, "last_reset_monthly": first_of_month}}
             )
             
+        # Handle potential float('inf') for Pydantic model
+        safe_daily_limit = daily_limit if daily_limit != float('inf') else 999999
+        safe_monthly_limit = monthly_limit if monthly_limit != float('inf') else 999999
         return {
             "daily_count": usage.get("daily_count", 0),
             "monthly_count": monthly_count,
             "total_count": usage.get("total_count", 0),
-            "daily_limit": daily_limit,
-            "monthly_limit": monthly_limit
+            "daily_limit": safe_daily_limit,
+            "monthly_limit": safe_monthly_limit
         }
         
     except Exception as e:
